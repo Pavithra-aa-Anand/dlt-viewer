@@ -132,12 +132,6 @@ private:
     WorkingDirectory workingDirectory;
     bool filterIsChanged;
 
-    /* Size of DLT file */
-    qint64 totalPayloadSize = 0;
-    qint64 totalMessageSize = 0;
-    qint64 totalStorageSize = 0;
-    const int STORAGE_HEADER_SIZE = 16;
-
     /* Status line items */
     QLabel *statusFilename;
     QLabel *statusFileError;
@@ -254,9 +248,6 @@ private:
     void openSupportedFile(const QString& path);
 
     void getSelectedItems(EcuItem **ecuitem,ApplicationItem** appitem,ContextItem** conitem);
-
-    int calculateHeaderSize(quint8 htyp);
-    quint32 alignedStorageSize(quint32 size);
     void reloadLogFile(bool update=false, bool multithreaded = true);
     void populateEcusTree(EcuTree&& ecuTree);
 
