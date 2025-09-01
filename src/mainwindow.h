@@ -261,17 +261,6 @@ private:
     //values to carry the logLevel and traceStatus : Edit All Log Levels
     int logLevel = 0;
     int traceStatus = 0;
-    bool markedRowCacheValid = false;
-    QVector<int> markedRowsInView;
-
-    bool isLiveLoggingActive() const;
-
-    bool manualMarkerUnionEnabled() const;
-    void updateManualMarkerUnionInFilter();
-    void clearManualMarkerUnionInFilter();
-
-    void invalidateMarkedRowCache();
-    void rebuildMarkedRowCache();
 
     /* functions called in constructor */
     void initState();

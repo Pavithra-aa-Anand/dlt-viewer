@@ -3614,6 +3614,9 @@ void MainWindow::on_action_menuDLT_Edit_All_Log_Levels_triggered()
                     conitem->loglevel = dlg.loglevel();
                     conitem->tracestatus = dlg.tracestatus();
 
+                    logLevel = conitem->loglevel + 1;
+                    traceStatus = conitem->tracestatus +1;
+
                     /* update context item */
                     conitem->update();
 
