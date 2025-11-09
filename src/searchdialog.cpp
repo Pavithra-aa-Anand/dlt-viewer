@@ -122,13 +122,24 @@ CSearchDialog::CSearchDialog(QWidget *parent) :
     checked = QDltSettingsManager::getInstance()->value("other/search/checkBoxRegEx", bool(true)).toBool();
     ui->checkBoxRegExp->setChecked(checked);
 
+    ui->stackedWidgetRange->setCurrentIndex(0); // default Timestamp range
     connect(ui->radioTimestamp, &QRadioButton::toggled, this, [this](bool checked) {
         if (checked)
             ui->stackedWidgetRange->setCurrentIndex(0);
     });
     connect(ui->radioTime, &QRadioButton::toggled, this, [this] (bool checked) {
-        if (checked)
+        if (checked) {
+            // switch from timestamp range to time range requires time range reset
+            m_timeRangeResetNeeded = true;
             ui->stackedWidgetRange->setCurrentIndex(1);
+        }
+    });
+    // user interaction with time range edits sets need for reset to false
+    connect(ui->dateTimeStart, &QDateTimeEdit::dateTimeChanged, this, [this]() {
+        m_timeRangeResetNeeded = false;
+    });
+    connect(ui->dateTimeEnd, &QDateTimeEdit::dateTimeChanged, this, [this]() {
+        m_timeRangeResetNeeded = false;
     });
 
     fSilentMode = !QDltOptManager::getInstance()->issilentMode();
@@ -170,6 +181,8 @@ void CSearchDialog::setTimeRange(const QDateTime& min, const QDateTime& max) {
 }
 
 bool CSearchDialog::needTimeRangeReset() const { return m_timeRangeResetNeeded; }
+
+bool SearchDialog::needTimeRangeReset() const { return m_timeRangeResetNeeded; }
 
 QString SearchDialog::getText() { return ui->lineEditSearch->text(); }
 
@@ -822,6 +835,7 @@ void CSearchDialog::findMessages(long int searchLine, long int searchBorder, QRe
     matcher.setSearchAppId(stApid);
     matcher.setSearchCtxId(stCtid);
 
+    assert(!(is_TimeStampSearchSelected && is_TimeSearchSelected));
     if (ui->radioTimestamp->isChecked() && is_TimeStampSearchSelected) {
         matcher.setTimestampRange(dTimeStampStart, dTimeStampStop);
     }
