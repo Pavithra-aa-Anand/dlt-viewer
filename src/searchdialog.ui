@@ -266,7 +266,7 @@
              </sizepolicy>
             </property>
             <property name="displayFormat">
-             <string>yyyy/MM/dd HH:mm:ss.zzz</string>
+             <string>yyyy/MM/dd HH:mm:ss.zzzzzz</string>
             </property>
            </widget>
           </item>
@@ -295,7 +295,7 @@
              </sizepolicy>
             </property>
             <property name="displayFormat">
-             <string>yyyy/MM/dd HH:mm:ss.zzz</string>
+             <string>yyyy/MM/dd HH:mm:ss.zzzzzz</string>
             </property>
            </widget>
           </item>
@@ -311,7 +311,7 @@
      <item>
       <widget class="QDialogButtonBox" name="buttonBox">
        <property name="standardButtons">
-        <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+        <set>QDialogButtonBox::Ok</set>
        </property>
       </widget>
      </item>
@@ -335,22 +335,6 @@
     </hint>
     <hint type="destinationlabel">
      <x>292</x>
-     <y>226</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>buttonBox</sender>
-   <signal>rejected()</signal>
-   <receiver>SearchDialog</receiver>
-   <slot>reject()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>293</x>
-     <y>430</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>293</x>
      <y>226</y>
     </hint>
    </hints>
