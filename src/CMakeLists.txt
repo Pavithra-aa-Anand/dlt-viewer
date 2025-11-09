@@ -102,7 +102,6 @@ add_executable(dlt-viewer
     mainwindow.ui
     multiplecontextdialog.ui
     plugindialog.ui
-
     searchform.ui
     settingsdialog.ui
     searchdialog.ui
