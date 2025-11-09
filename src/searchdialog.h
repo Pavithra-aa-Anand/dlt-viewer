@@ -305,17 +305,12 @@ private:
     QList<QLineEdit*> lineEdits;
 
 private slots:
-    //! React to search text edits in the dialog.
     void on_lineEditSearch_textEdited(QString newText);
-    //! Open color picker for match highlight color.
+    void on_pushButtonPrevious_clicked();
+    void on_pushButtonNext_clicked();
     void on_buttonHighlightColor_clicked();
-    //! Toggle asynchronous find-all mode.
-    void on_checkBoxFindAll_toggled(bool checked);
 
-    /**
-     * @brief Slot for header checkbox toggled.
-     * @param checked Checkbox state.
-    */
+    void on_checkBoxFindAll_toggled(bool checked);
 
     void on_checkBoxHeader_toggled(bool checked);
     /**

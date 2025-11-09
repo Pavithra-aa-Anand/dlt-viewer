@@ -33,17 +33,6 @@
 #include <QSignalBlocker>
 #include <QColorDialog>
 #include <QAction>
-#include <QPointer>
-#include <QDebug>
-#include <QThread>
-#include <QThreadPool>
-#include <QThreadStorage>
-#include <QtConcurrent/QtConcurrent>
-
-#include <cstdint>
-#include <limits>
-#include <mutex>
-#include <utility>
 
 namespace {
 
@@ -111,14 +100,13 @@ CSearchDialog::CSearchDialog(QWidget *parent) :
 {
     ui->setupUi(this);
 
-    connect(&m_findAllWatcher, &QFutureWatcher<std::vector<std::uint64_t>>::finished,
-            this, &CSearchDialog::onFindAllFinished);
-
     regexpCheckBox = ui->checkBoxRegExp;
+    CheckBoxSearchtoList = ui->checkBoxFindAll;
     match = false;
     startLine = -1;
 
-    lineEdits.append(ui->lineEditSearch);
+    lineEdits = new QList<QLineEdit*>();
+    lineEdits->append(ui->lineEditSearch);
     table = nullptr;
 
     // at start we want to know if single step search or "fill search table mode" is active !
@@ -134,28 +122,14 @@ CSearchDialog::CSearchDialog(QWidget *parent) :
     checked = QDltSettingsManager::getInstance()->value("other/search/checkBoxRegEx", bool(true)).toBool();
     ui->checkBoxRegExp->setChecked(checked);
 
-    ui->stackedWidgetRange->setCurrentIndex(0); // default Timestamp range
     connect(ui->radioTimestamp, &QRadioButton::toggled, this, [this](bool checked) {
         if (checked)
             ui->stackedWidgetRange->setCurrentIndex(0);
     });
     connect(ui->radioTime, &QRadioButton::toggled, this, [this] (bool checked) {
-        if (checked) {
-            // switch from timestamp range to time range requires time range reset
-            m_timeRangeResetNeeded = true;
+        if (checked)
             ui->stackedWidgetRange->setCurrentIndex(1);
-        }
     });
-    // user interaction with time range edits sets need for reset to false
-    connect(ui->dateTimeStart, &QDateTimeEdit::dateTimeChanged, this, [this]() {
-        m_timeRangeResetNeeded = false;
-    });
-    connect(ui->dateTimeEnd, &QDateTimeEdit::dateTimeChanged, this, [this]() {
-        m_timeRangeResetNeeded = false;
-    });
-
-    // OK button triggers find next
-    connect(this, &CSearchDialog::accepted, this, &CSearchDialog::findNextClicked);
 
     fSilentMode = !QDltOptManager::getInstance()->issilentMode();
 
@@ -197,9 +171,7 @@ void CSearchDialog::setTimeRange(const QDateTime& min, const QDateTime& max) {
 
 bool CSearchDialog::needTimeRangeReset() const { return m_timeRangeResetNeeded; }
 
-void CSearchDialog::appendLineEdit(QLineEdit *lineEdit){ lineEdits.append(lineEdit);}
-
-QString CSearchDialog::getText() { return ui->lineEditSearch->text(); }
+QString SearchDialog::getText() { return ui->lineEditSearch->text(); }
 
 void CSearchDialog::invalidateDecodeCache()
 {
