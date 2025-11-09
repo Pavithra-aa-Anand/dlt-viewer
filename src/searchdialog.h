@@ -148,11 +148,14 @@ private:
     bool match;
     bool onceClicked;
     bool fSilentMode;
-    bool is_TimeStampSearchSelected;
+    bool is_TimeStampSearchSelected{false};
+    bool is_TimeSearchSelected{false};
     bool fIs_APID_CTID_requested;
 
-    double  dTimeStampStart{0.0};
-    double  dTimeStampStop{0.0};
+    QString TimeStampStarttime;
+    QString TimeStampStoptime;
+    double  dTimeStampStart;
+    double  dTimeStampStop;
     bool m_timeRangeResetNeeded{true};
 
     QString stApid;
