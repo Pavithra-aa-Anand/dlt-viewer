@@ -1711,6 +1711,7 @@ void QDltMsg::genMsg()
 
     // write extendedheader
     if(needOfExtendedHeader) {
+    if(mode == DltModeVerbose || (!apid.isEmpty() || !ctid.isEmpty())) {
         strncpy(extendedheader.apid,apid.toLatin1().constData(),apid.size()>3?4:apid.size()+1);
         strncpy(extendedheader.ctid,ctid.toLatin1().constData(),ctid.size()>3?4:ctid.size()+1);
         extendedheader.msin = 0;
