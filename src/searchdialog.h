@@ -21,6 +21,7 @@
 #define SEARCHDIALOG_H
 
 #include <QDialog>
+#include <QTableView>
 #include <QCheckBox>
 #include <QColor>
 #include <QDateTime>
@@ -55,6 +56,8 @@ class CSearchDialog : public QDialog {
     Q_OBJECT
 
 public:
+    explicit SearchDialog(QWidget *parent = nullptr);
+    ~SearchDialog();
 
     /**
      * @brief Constructor for CSearchDialog.
@@ -152,7 +155,6 @@ private:
     SearchPerformance performanceMeasure;
     bool nextClicked;
     bool match;
-    bool onceClicked;
     bool fSilentMode;
     bool is_TimeStampSearchSelected{false};
     bool is_TimeSearchSelected{false};
@@ -304,13 +306,19 @@ private:
      * @return End timestamp as QString.
      */
     QString getTimeStampEnd();
-    std::vector<std::vector<unsigned long>> m_searchHistory;
+    bool searchtoIndex();
+    bool foundLine(long int searchLine);
+    QString getApIDText();
+    QString getCtIDText();
+    QString getTimeStampStart();
+    QString getTimeStampEnd();
+    QString getPayLoadStampStart();
+    QString getPayLoadStampEnd();
+    QList < QList <unsigned long>> m_searchHistory;
     QList<QLineEdit*> lineEdits;
 
 private slots:
     void on_lineEditSearch_textEdited(QString newText);
-    void on_pushButtonPrevious_clicked();
-    void on_pushButtonNext_clicked();
     void on_buttonHighlightColor_clicked();
 
     void on_checkBoxFindAll_toggled(bool checked);

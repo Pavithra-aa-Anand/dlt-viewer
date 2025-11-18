@@ -101,12 +101,10 @@ CSearchDialog::CSearchDialog(QWidget *parent) :
     ui->setupUi(this);
 
     regexpCheckBox = ui->checkBoxRegExp;
-    CheckBoxSearchtoList = ui->checkBoxFindAll;
     match = false;
     startLine = -1;
 
-    lineEdits = new QList<QLineEdit*>();
-    lineEdits->append(ui->lineEditSearch);
+    lineEdits.append(ui->lineEditSearch);
     table = nullptr;
 
     // at start we want to know if single step search or "fill search table mode" is active !
@@ -183,6 +181,7 @@ void CSearchDialog::setTimeRange(const QDateTime& min, const QDateTime& max) {
 bool CSearchDialog::needTimeRangeReset() const { return m_timeRangeResetNeeded; }
 
 bool SearchDialog::needTimeRangeReset() const { return m_timeRangeResetNeeded; }
+void SearchDialog::appendLineEdit(QLineEdit *lineEdit){ lineEdits.append(lineEdit);}
 
 QString SearchDialog::getText() { return ui->lineEditSearch->text(); }
 
@@ -804,13 +803,29 @@ int CSearchDialog::find()
     return 0;
 }
 
-void CSearchDialog::findMessages(long int searchLine, long int searchBorder, QRegularExpression &searchTextRegExp)
+class ScopedTimer {
+public:
+    ScopedTimer() : m_start(std::chrono::high_resolution_clock::now()) {}
+
+    ~ScopedTimer() {
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(end - m_start).count();
+        qDebug() << "Time for search: " << duration << " ms";
+    }
+
+private:
+    std::chrono::high_resolution_clock::time_point m_start;
+};
+
+void SearchDialog::findMessages(long int searchLine, long int searchBorder, QRegularExpression &searchTextRegExp)
 {
     QDltMsg msg;
     int ctr = 0;
     Qt::CaseSensitivity is_Case_Sensitive = Qt::CaseInsensitive;
 
     starttime(getText());
+    ScopedTimer timer{};
 
     if(getCaseSensitive() == true)
     {
@@ -955,6 +970,10 @@ void CSearchDialog::findNextClicked()
             setSearchColour(lineEdits.at(i), result);
         return;
 #endif
+    int result = find();
+    for(int i=0; i<lineEdits.size();i++)
+    {
+       setSearchColour(lineEdits.at(i),result);
     }
 
     int result = find();
@@ -977,6 +996,9 @@ void CSearchDialog::findPreviousClicked()
             setSearchColour(lineEdits.at(i), result);
         return;
 #endif
+    int result = find();
+    for(int i=0; i<lineEdits.size();i++){
+       setSearchColour(lineEdits.at(i),result);
     }
 
     int result = find();
