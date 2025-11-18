@@ -22,7 +22,6 @@
 
 #include <QDialog>
 #include <QTableView>
-#include <QTreeWidget>
 #include <QCheckBox>
 #include <QCache>
 #include <QElapsedTimer>
@@ -30,28 +29,15 @@
 #include "searchtablemodel.h"
 #include "searchperformance.h"
 
-
-#if defined(_MSC_VER)
-#include <io.h>
-#include <time.h>
-#include <WinSock.h>
-#else
-#include <unistd.h>     /* for read(), close() */
-#include <sys/time.h>	/* for gettimeofday() */
-#endif
-
-
 namespace Ui {
-    class SearchDialog;
+class SearchDialog;
 }
 
-
-class SearchDialog : public QDialog
-{
+class SearchDialog : public QDialog {
     Q_OBJECT
 
 public:
-    explicit SearchDialog(QWidget *parent = 0);
+    explicit SearchDialog(QWidget *parent = nullptr);
     ~SearchDialog();
 
     void focusRow(long int searchLine);
@@ -91,7 +77,6 @@ private:
     SearchPerformance performanceMeasure;
     bool nextClicked;
     bool match;
-    bool onceClicked;
     bool fSilentMode;
     bool is_TimeStampSearchSelected{false};
     bool is_TimeSearchSelected{false};
@@ -132,7 +117,6 @@ private:
     bool getRegExp();
     bool getNextClicked();
     bool getClicked();
-    bool getOnceClicked();
     bool searchtoIndex();
     bool foundLine(long int searchLine);
     QString getApIDText();
@@ -142,14 +126,10 @@ private:
     QString getPayLoadStampStart();
     QString getPayLoadStampEnd();
     QList < QList <unsigned long>> m_searchHistory;
-    QList<QLineEdit*> *lineEdits;
-
-    QCheckBox *CheckBoxSearchtoList;
+    QList<QLineEdit*> lineEdits;
 
 private slots:
     void on_lineEditSearch_textEdited(QString newText);
-    void on_pushButtonPrevious_clicked();
-    void on_pushButtonNext_clicked();
     void on_buttonHighlightColor_clicked();
 
     void on_checkBoxFindAll_toggled(bool checked);

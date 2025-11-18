@@ -38,13 +38,10 @@ SearchDialog::SearchDialog(QWidget *parent) :
     ui->setupUi(this);
 
     regexpCheckBox = ui->checkBoxRegExp;
-    CheckBoxSearchtoList = ui->checkBoxFindAll;
     match = false;
-    onceClicked = false;
     startLine = -1;
 
-    lineEdits = new QList<QLineEdit*>();
-    lineEdits->append(ui->lineEditSearch);
+    lineEdits.append(ui->lineEditSearch);
     table = nullptr;
 
     // at start we want to know if single step search or "fill search table mode" is active !
@@ -112,8 +109,7 @@ void SearchDialog::setTimeRange(const QDateTime& min, const QDateTime& max) {
 
 bool SearchDialog::needTimeRangeReset() const { return m_timeRangeResetNeeded; }
 
-void SearchDialog::setOnceClicked(bool clicked){onceClicked=clicked;}
-void SearchDialog::appendLineEdit(QLineEdit *lineEdit){ lineEdits->append(lineEdit);}
+void SearchDialog::appendLineEdit(QLineEdit *lineEdit){ lineEdits.append(lineEdit);}
 
 QString SearchDialog::getText() { return ui->lineEditSearch->text(); }
 
@@ -138,7 +134,6 @@ bool SearchDialog::getRegExp()
 }
 
 bool SearchDialog::getNextClicked(){return nextClicked;}
-bool SearchDialog::getOnceClicked(){return onceClicked;}
 
 QString SearchDialog::getApIDText(){ return ui->lineEditApld->text();}
 QString SearchDialog::getCtIDText(){ return ui->lineEditCtid->text();}
@@ -392,6 +387,20 @@ int SearchDialog::find()
     return 0;
 }
 
+class ScopedTimer {
+public:
+    ScopedTimer() : m_start(std::chrono::high_resolution_clock::now()) {}
+
+    ~ScopedTimer() {
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(end - m_start).count();
+        qDebug() << "Time for search: " << duration << " ms";
+    }
+
+private:
+    std::chrono::high_resolution_clock::time_point m_start;
+};
 
 void SearchDialog::findMessages(long int searchLine, long int searchBorder, QRegularExpression &searchTextRegExp)
 {
@@ -402,6 +411,7 @@ void SearchDialog::findMessages(long int searchLine, long int searchBorder, QReg
     Qt::CaseSensitivity is_Case_Sensitive = Qt::CaseInsensitive;
 
     starttime(getText());
+    ScopedTimer timer{};
 
     if(getCaseSensitive() == true)
     {
@@ -510,36 +520,14 @@ bool SearchDialog::foundLine(long int searchLine)
     return false;//don't break search here
 }
 
-void SearchDialog::on_pushButtonNext_clicked() // connected to main window line 424
-{
-    /* For every new search, start payLoad and EndpayLoad will be different and hence member variable storing previous found
-     * value shoudl eb reset. */
-    setNextClicked(true);
-    int result = find();
-    for(int i=0; i<lineEdits->size();i++)
-    {
-       setSearchColour(lineEdits->at(i),result);
-    }
-}
-
-void SearchDialog::on_pushButtonPrevious_clicked()
-{
-    setNextClicked(false);
-    int result = find();
-    for(int i=0; i<lineEdits->size();i++)
-    {
-       setSearchColour(lineEdits->at(i),result);
-    }
-}
-
 void SearchDialog::findNextClicked()
 {
     setNextClicked(true);
 
     int result = find();
-    for(int i=0; i<lineEdits->size();i++)
+    for(int i=0; i<lineEdits.size();i++)
     {
-       setSearchColour(lineEdits->at(i),result);
+       setSearchColour(lineEdits.at(i),result);
     }
 }
 
@@ -548,8 +536,8 @@ void SearchDialog::findPreviousClicked()
     setNextClicked(false);
 
     int result = find();
-    for(int i=0; i<lineEdits->size();i++){
-       setSearchColour(lineEdits->at(i),result);
+    for(int i=0; i<lineEdits.size();i++){
+       setSearchColour(lineEdits.at(i),result);
     }
 }
 
@@ -557,24 +545,24 @@ void SearchDialog::on_lineEditSearch_textEdited(QString newText)
 {
         {
             // block signal so that it does not trigger a setText back on lineEdits->at(0)!
-            QSignalBlocker signalBlocker(lineEdits->at(1));
-            lineEdits->at(1)->setText(newText);
+            QSignalBlocker signalBlocker(lineEdits.at(1));
+            lineEdits.at(1)->setText(newText);
         }
-        for(int i=0; i<lineEdits->size();i++){
-            if(lineEdits->at(0)->text().isEmpty())
-                setSearchColour(lineEdits->at(i),1);
+        for(int i=0; i<lineEdits.size();i++){
+            if(lineEdits.at(0)->text().isEmpty())
+                setSearchColour(lineEdits.at(i),1);
         }
 }
 void SearchDialog::textEditedFromToolbar(QString newText)
 {
         {
             // block signal so that it does not trigger a setText back on lineEdits->at(1)!
-            QSignalBlocker signalBlocker(lineEdits->at(0));
-            lineEdits->at(0)->setText(newText);
+            QSignalBlocker signalBlocker(lineEdits.at(0));
+            lineEdits.at(0)->setText(newText);
         }
-        for(int i=0; i<lineEdits->size();i++){
-            if(lineEdits->at(0)->text().isEmpty())
-                setSearchColour(lineEdits->at(i),1);
+        for(int i=0; i<lineEdits.size();i++){
+            if(lineEdits.at(0)->text().isEmpty())
+                setSearchColour(lineEdits.at(i),1);
         }
 }
 
