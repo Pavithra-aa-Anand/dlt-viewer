@@ -140,6 +140,9 @@ CSearchDialog::CSearchDialog(QWidget *parent) :
         m_timeRangeResetNeeded = false;
     });
 
+    // OK button triggers find next
+    connect(this, &SearchDialog::accepted, this, &SearchDialog::findNextClicked);
+
     fSilentMode = !QDltOptManager::getInstance()->issilentMode();
 
     updateColorbutton();
