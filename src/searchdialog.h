@@ -140,11 +140,15 @@ private:
     std::int64_t m_findAllLastUiUpdateMs{0};
     int m_findAllAddedSinceLastUiUpdate{0};
 
-    long int startLine{-1};
-    bool nextClicked{true};
-    bool match{false};
-    bool fSilentMode{false};
-    bool is_TimeStampSearchSelected{false};
+    long int startLine;
+    long searchseconds;
+    qint64 indexingStartTimeMs;
+    bool nextClicked;
+    bool match;
+    bool onceClicked;
+    bool fSilentMode;
+    bool is_TimeStampSearchSelected;
+    bool fIs_APID_CTID_requested;
 
     double  dTimeStampStart{0.0};
     double  dTimeStampStop{0.0};
@@ -206,17 +210,10 @@ private:
      */
     void setNextClicked(bool next);    
 
-    /**
-     * @brief Main function to perform search.
-     * @return Result code.
-     */
-    void startParallelFindAll(QRegularExpression searchTextRegExp);
-    //! Update find-all progress in the UI.
-    void reportProgress(int progress);
-    //! Append a batch of matches found so far to the search table, live during the search.
-    void publishPartialMatches(const std::vector<std::uint64_t> &matches);
-    //! Finalize UI state after async find-all completion.
-    void onFindAllFinished();
+    void starttime(void);
+    void stoptime(void);
+    void startIndexingTimeMs(void);
+    void stopIndexingTimeMs(void);
 
     //! Execute single-step find next/previous operation.
     int find();
