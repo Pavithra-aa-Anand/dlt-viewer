@@ -25,8 +25,10 @@
 #include <QTreeWidget>
 #include <QCheckBox>
 #include <QCache>
+#include <QElapsedTimer>
 
 #include "searchtablemodel.h"
+#include "searchperformance.h"
 
 
 #if defined(_MSC_VER)
@@ -82,6 +84,9 @@ private:
 
     long int startLine;
     long searchseconds;
+    QElapsedTimer searchTimer;
+    qint64 searchCpuTimeStart;
+    SearchPerformance performanceMeasure;
     bool nextClicked;
     bool match;
     bool onceClicked;
@@ -111,8 +116,8 @@ private:
     void setCaseSensitive(bool caseSensitive);
     void setNextClicked(bool next);
 
-    void starttime(void);
-    void stoptime(void);
+    void starttime(const QString& searchTerm = "");
+    void stoptime(qint64 messagesProcessed = 0);
 
     int find();
 
