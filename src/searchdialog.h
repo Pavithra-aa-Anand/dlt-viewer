@@ -82,6 +82,7 @@ private:
 
     long int startLine;
     long searchseconds;
+    qint64 indexingStartTimeMs;
     bool nextClicked;
     bool match;
     bool onceClicked;
@@ -113,6 +114,8 @@ private:
 
     void starttime(void);
     void stoptime(void);
+    void startIndexingTimeMs(void);
+    void stopIndexingTimeMs(void);
 
     int find();
 

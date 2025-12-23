@@ -6,6 +6,7 @@
 #include <QMessageBox>
 #include <QApplication>
 #include <QTime>
+#include <QDateTime>
 #include <QCryptographicHash>
 #include <QMutexLocker>
 #include <QDir>
@@ -95,12 +96,17 @@ bool DltFileIndexer::index(int num)
     // start performance counter
     //QTime time(0,0,0,0);
     // time.start();
+    qint64 indexingStartTimeMs = QDateTime::currentMSecsSinceEpoch();
 
     // load filter index if enabled
     if(filterCacheEnabled && loadIndexCache(dltFile->getFileName(num)))
     {
         // loading index from filter is successful
         qDebug() << "Successfully loaded index cache for file" << dltFile->getFileName(num);// << __LINE__;
+        // Calculate and log indexing time for cache loading
+        qint64 currentTimeMs = QDateTime::currentMSecsSinceEpoch();
+        qint64 totalDurationMs = currentTimeMs - indexingStartTimeMs;
+        qDebug() << "Total indexing time of DLT file [ms]:" << totalDurationMs;
         return true;
     }
 
@@ -367,6 +373,10 @@ bool DltFileIndexer::index(int num)
     // close file
     f.close();
 
+    // Calculate and log indexing time
+    qint64 currentTimeMs = QDateTime::currentMSecsSinceEpoch();
+    qint64 totalDurationMs = currentTimeMs - indexingStartTimeMs;
+    qDebug() << "Total indexing time of DLT file [ms]:" << totalDurationMs;
     //qDebug() << "Duration:" << time.elapsed()/1000 << __LINE__;
 
     return true;
@@ -381,6 +391,7 @@ bool DltFileIndexer::indexFilter(QStringList filenames)
 
     // start performance counter
     //time.start();
+    qint64 filterIndexingStartTimeMs = QDateTime::currentMSecsSinceEpoch();
 
     // get filter list
     filterList = dltFile->getFilterList();
@@ -415,6 +426,10 @@ bool DltFileIndexer::indexFilter(QStringList filenames)
     {
         // loading filter index from filter is successful
         qDebug() << "Loaded filter index cache for files" << filenames;
+        // Calculate and log filter indexing time for cache loading
+        qint64 currentTimeMs = QDateTime::currentMSecsSinceEpoch();
+        qint64 totalDurationMs = currentTimeMs - filterIndexingStartTimeMs;
+        qDebug() << "Total filter indexing time [ms]:" << totalDurationMs;
         return true;
     }
 
@@ -526,6 +541,10 @@ bool DltFileIndexer::indexFilter(QStringList filenames)
         qDebug() << "Saved filter index cache for files" << filenames;
     }
 
+    // Calculate and log filter indexing time
+    qint64 currentTimeMs = QDateTime::currentMSecsSinceEpoch();
+    qint64 totalDurationMs = currentTimeMs - filterIndexingStartTimeMs;
+    qDebug() << "Total filter indexing time [ms]:" << totalDurationMs;
     qDebug() << "Create filter index: Finish";
 
     return true;
@@ -538,6 +557,7 @@ bool DltFileIndexer::indexDefaultFilter()
     // start performance counter
     //QTime time;
     //time.start();
+    qint64 defaultFilterIndexingStartTimeMs = QDateTime::currentMSecsSinceEpoch();
 
     // Initialise progress bar
     emit(progressText(QString("IF %1/%2").arg(currentRun).arg(maxRun)));
@@ -629,6 +649,10 @@ bool DltFileIndexer::indexDefaultFilter()
     //msecsDefaultFilterCounter = time.elapsed();
     //qDebug() << "Duration " << msecsDefaultFilterCounter;
 
+    // Calculate and log default filter indexing time
+    qint64 currentTimeMs = QDateTime::currentMSecsSinceEpoch();
+    qint64 totalDurationMs = currentTimeMs - defaultFilterIndexingStartTimeMs;
+    qDebug() << "Total default filter indexing time [ms]:" << totalDurationMs;
     return true;
 }
 

@@ -28,6 +28,7 @@
 #include <QProgressBar>
 #include <QProgressDialog>
 #include <QSignalBlocker>
+#include <QDateTime>
 
 
 /**
@@ -45,6 +46,7 @@ SearchDialog::SearchDialog(QWidget *parent) :
     match = false;
     onceClicked = false;
     startLine = -1;
+    indexingStartTimeMs = 0;
 
     lineEdits = new QList<QLineEdit*>();
     lineEdits->append(ui->lineEditText);
@@ -453,6 +455,15 @@ int SearchDialog::find()
 
     findMessages(startLine,searchBorder,searchTextRegExpression);
 
+    // Log whether the search term was found (works for both single-step and batch modes)
+    bool searchFound = false;
+    if (searchtoIndex()) {
+        searchFound = (m_searchtablemodel->get_SearchResultListSize() > 0);
+    }
+    else {
+        searchFound = match;
+    }
+    qDebug() << "Search term exists:" << (searchFound ? "true" : "false");
     emit searchProgressChanged(false);
 
     if (searchtoIndex() == true )
@@ -489,6 +500,8 @@ void SearchDialog::findMessages(long int searchLine, long int searchBorder, QReg
     int ctr = 0;
     Qt::CaseSensitivity is_Case_Sensitive = Qt::CaseInsensitive;
 
+    // Start overall search timing
+    qint64 searchStartTimeMs = QDateTime::currentMSecsSinceEpoch();
     starttime();
 
     if(getCaseSensitive() == true)
@@ -498,6 +511,16 @@ void SearchDialog::findMessages(long int searchLine, long int searchBorder, QReg
 
     m_searchtablemodel->clear_SearchResults();
 
+    // Start indexing timer for batch/index mode
+    if (searchtoIndex()) {
+        startIndexingTimeMs();
+    }
+    // Log search parameters (only for batch/index mode)
+    QString searchText = getText();
+    if (searchtoIndex()) {
+        qDebug() << "Search string:" << searchText;
+        qDebug() << "Total messages to search:" << file->sizeFilter();
+    }
     bool msgIdEnabled=QDltSettingsManager::getInstance()->value("startup/showMsgId", true).toBool();
     QString msgIdFormat=QDltSettingsManager::getInstance()->value("startup/msgIdFormat", "0x%x").toString();
 
@@ -570,7 +593,17 @@ void SearchDialog::findMessages(long int searchLine, long int searchBorder, QReg
             continue;
     }
     while( searchBorder != searchLine );
+    // Stop indexing timer for batch/index mode
+    if (searchtoIndex()) {
+        stopIndexingTimeMs();
+    }
     stoptime();
+    // Calculate and log overall search time with results
+    qint64 searchEndTimeMs = QDateTime::currentMSecsSinceEpoch();
+    qint64 totalSearchDurationMs = searchEndTimeMs - searchStartTimeMs;
+    int resultsFound = searchtoIndex() ? m_searchtablemodel->get_SearchResultListSize() : (match ? 1 : 0);
+    qDebug() << "Total search time [ms]:" << totalSearchDurationMs;
+    qDebug() << "Results found:" << resultsFound;
 }
 
 /**
@@ -902,6 +935,20 @@ long int dtemps;
 
     dtemps = temps - searchseconds;
     qDebug() << "Time for search [s]" << dtemps;
+}
+
+// Starts the millisecond timer for indexing duration measurement.
+void SearchDialog::startIndexingTimeMs(void)
+{
+    indexingStartTimeMs = QDateTime::currentMSecsSinceEpoch();
+}
+
+// Stops the millisecond timer and logs the indexing duration.
+void SearchDialog::stopIndexingTimeMs(void)
+{
+    qint64 currentTimeMs = QDateTime::currentMSecsSinceEpoch();
+    qint64 totalDurationMs = currentTimeMs - indexingStartTimeMs;
+    qDebug() << "Total indexing time of search results [ms]:" << totalDurationMs;
 }
 
 
