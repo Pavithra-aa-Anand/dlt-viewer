@@ -825,6 +825,8 @@ void CSearchDialog::findMessages(long int searchLine, long int searchBorder, QRe
     int ctr = 0;
     Qt::CaseSensitivity is_Case_Sensitive = Qt::CaseInsensitive;
 
+    starttime(getText());
+
     if(getCaseSensitive() == true)
     {
         is_Case_Sensitive = Qt::CaseSensitive;
@@ -929,7 +931,7 @@ void CSearchDialog::findMessages(long int searchLine, long int searchBorder, QRe
             continue;
     }
     while( searchBorder != searchLine );
-
+    stoptime(ctr);
 }
 
 bool CSearchDialog::foundLine(long int searchLine, int globalIndex)
@@ -1143,6 +1145,61 @@ void CSearchDialog::on_checkBoxCaseSensitive_toggled(bool checked)
 void CSearchDialog::on_checkBoxRegExp_toggled(bool checked)
 {
     QDltSettingsManager::getInstance()->setValue("other/search/checkBoxRegEx", checked);
+}
+
+
+void SearchDialog::starttime(const QString& searchTerm)
+{
+    // Start high-precision performance measurement
+    performanceMeasure.start(searchTerm);
+    // Start the high-resolution timer
+    searchTimer.start();
+    // Store CPU time at start (in milliseconds)
+#if defined(_MSC_VER)
+    searchCpuTimeStart = GetTickCount64();
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts);
+    searchCpuTimeStart = ts.tv_sec * 1000LL + ts.tv_nsec / 1000000LL;
+#endif
+long int temps;
+
+#if defined(_MSC_VER)
+   SYSTEMTIME systemtime;
+   GetSystemTime(&systemtime);
+   time_t timestamp_sec;
+   time(&timestamp_sec);
+   temps = (time_t)timestamp_sec;
+#else
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    temps = (time_t)tv.tv_sec;
+#endif
+    searchseconds = temps;
+
+}
+
+void SearchDialog::stoptime(qint64 messagesProcessed)
+{
+long int temps;
+long int dtemps;
+
+    QString perfReport = performanceMeasure.stop(messagesProcessed);
+    qDebug().noquote() << perfReport;
+#if defined(_MSC_VER)
+   SYSTEMTIME systemtime;
+   GetSystemTime(&systemtime);
+   time_t timestamp_sec;
+   time(&timestamp_sec);
+   temps = (time_t)timestamp_sec;
+#else
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    temps = (time_t)tv.tv_sec;
+#endif
+
+    dtemps = temps - searchseconds;
+    qDebug() << "Time for search [s]" << dtemps;
 }
 
 

@@ -33,11 +33,11 @@
 #include <QTableView>
 
 #include <atomic>
-#include <cstdint>
-#include <vector>
+#include <QCache>
+#include <QElapsedTimer>
 
 #include "searchtablemodel.h"
-#include "decodecacheservice.h"
+#include "searchperformance.h"
 
 namespace Ui {
 class SearchDialog;
@@ -145,6 +145,17 @@ private:
     bool match{false};
     bool fSilentMode{false};
     bool is_TimeStampSearchSelected{false};
+    long int startLine;
+    long searchseconds;
+    QElapsedTimer searchTimer;
+    qint64 searchCpuTimeStart;
+    SearchPerformance performanceMeasure;
+    bool nextClicked;
+    bool match;
+    bool onceClicked;
+    bool fSilentMode;
+    bool is_TimeStampSearchSelected;
+    bool fIs_APID_CTID_requested;
 
     double  dTimeStampStart{0.0};
     double  dTimeStampStop{0.0};
@@ -217,6 +228,9 @@ private:
     void publishPartialMatches(const std::vector<std::uint64_t> &matches);
     //! Finalize UI state after async find-all completion.
     void onFindAllFinished();
+    void appendFindAllMatchesChunk(const QList<unsigned long>& entries);
+    void starttime(const QString& searchTerm = "");
+    void stoptime(qint64 messagesProcessed = 0);
 
     //! Execute single-step find next/previous operation.
     int find();
