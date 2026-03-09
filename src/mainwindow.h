@@ -1,3 +1,4 @@
+
 /**
  * @licence app begin@
  * Copyright (C) 2011-2012  BMW AG
@@ -28,6 +29,7 @@
 #include <QColor>
 #include <QComboBox>
 #include <QProgressBar>
+#include <QVector>
 
 #include <QTableWidget>
 #include <QAbstractItemModel>
@@ -154,6 +156,8 @@ private:
     /* Shortcuts */
     QShortcut *copyPayloadShortcut;
     QShortcut *markShortcut;
+    QShortcut *nextMarkedShortcut;
+    QShortcut *prevMarkedShortcut;
 
     /* Export */
     ExporterDialog exporterDialog;
@@ -239,6 +243,17 @@ private:
     //values to carry the logLevel and traceStatus : Edit All Log Levels
     int logLevel = 0;
     int traceStatus = 0;
+    bool markedRowCacheValid = false;
+    QVector<int> markedRowsInView;
+
+    bool isLiveLoggingActive() const;
+
+    bool manualMarkerUnionEnabled() const;
+    void updateManualMarkerUnionInFilter();
+    void clearManualMarkerUnionInFilter();
+
+    void invalidateMarkedRowCache();
+    void rebuildMarkedRowCache();
 
     /* functions called in constructor */
     void initState();
@@ -442,6 +457,8 @@ public slots:
     void on_actionFindNext();
     void mark_unmark_lines();
     void unmark_all_lines();
+    void goto_next_marked_line();
+    void goto_prev_marked_line();
     void filterIndexStart();
     void filterIndexEnd();
     void splitLogsEcuid();
