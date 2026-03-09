@@ -1,4 +1,4 @@
-/**
+sss/**
  * @licence app begin@
  * Copyright (C) 2011-2012  BMW AG
  *
@@ -210,12 +210,11 @@ private:
      */
     void setNextClicked(bool next);    
 
-    void starttime(void);
-    void stoptime(void);
-    void startIndexingTimeMs(void);
-    void stopIndexingTimeMs(void);
+    void startParallelFindAll(QRegularExpression searchTextRegExp);
+    void reportProgress(int progress);
+    void onFindAllFinished();
+    void appendFindAllMatchesChunk(const QList<unsigned long>& entries);
 
-    //! Execute single-step find next/previous operation.
     int find();
 
     /**
