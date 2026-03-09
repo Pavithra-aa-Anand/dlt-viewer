@@ -112,6 +112,11 @@ private:
     void setCaseSensitive(bool caseSensitive);
     void setNextClicked(bool next);
 
+    void startParallelFindAll(QRegularExpression searchTextRegExp);
+    void reportProgress(int progress);
+    void onFindAllFinished();
+    void appendFindAllMatchesChunk(const QList<unsigned long>& entries);
+
     int find();
 
     bool getSearchFromBeginning();
