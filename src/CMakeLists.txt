@@ -80,6 +80,8 @@ add_executable(dlt-viewer
     searchform.cpp
     filtergrouplogs.h
     filtergrouplogs.cpp
+    crlffilterwindow.h
+    crlffilterwindow.cpp
     ${UI_RESOURCES_RCC}
     resources/dlt_viewer.rc
     ecutree.h
@@ -102,6 +104,8 @@ add_executable(dlt-viewer
     searchform.ui
     settingsdialog.ui
     searchdialog.ui
+    updatechecker.h
+    updatechecker.cpp
 )
 
 target_link_libraries(dlt-viewer
