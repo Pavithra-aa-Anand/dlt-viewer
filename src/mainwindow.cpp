@@ -34,9 +34,11 @@
 #include <QLineEdit>
 #include <QUrl>
 #include <QDateTime>
+#include <QHash>
 #include <QLabel>
 #include <QInputDialog>
 #include <QByteArray>
+#include <QSet>
 #include <QSysInfo>
 #include <QSerialPort>
 #include <QSerialPortInfo>
@@ -1053,6 +1055,21 @@ void MainWindow::commandLineExecutePlugin(QString name, QString cmd, QStringList
 
         exit(-1);
     }
+
+    // Special handling for the non-verbose decoder plugin when used from
+    // the command line:
+    //
+    // The "fibex_path" command only stores the configured path inside the
+    // plugin. To actually load and parse the Fibex data before any
+    // decoding or exporting happens, we need to trigger its loadConfig()
+    // once the command has been processed. Passing an empty filename lets
+    // the plugin use the path set via the command.
+    if (plugin->isDecoder()
+            && plugin->name() == QLatin1String("Non Verbose Mode Plugin")
+            && cmd.compare(QLatin1String("fibex_path"), Qt::CaseInsensitive) == 0)
+    {
+        plugin->loadConfig(QString());
+    }
 }
 
 void MainWindow::deleteactualFile()
@@ -1082,6 +1099,13 @@ void MainWindow::deleteactualFile()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    stopExportIfRunning();
+    if(isExportInProgress())
+    {
+        event->ignore();
+        return;
+    }
+
     // Shall we save the updated plugin execution priorities??
 
     settingsDlg->writeSettings(this);
@@ -1648,6 +1672,55 @@ bool MainWindow::isLiveLoggingActive() const
     return false;
 }
 
+bool MainWindow::isExportInProgress() const
+{
+    return activeExporterThread && activeExporterThread->isRunning();
+}
+
+bool MainWindow::startExportThread(QDltExporter *exporterThread, QModelIndexList *ownedSelection)
+{
+    if(!exporterThread)
+        return false;
+
+    if(isExportInProgress())
+    {
+        if(ownedSelection)
+            delete ownedSelection;
+        exporterThread->deleteLater();
+        QMessageBox::information(this, QString("DLT Viewer"),
+                                 QString("An export is already in progress. Please wait until it finishes."));
+        return false;
+    }
+
+    activeExporterThread = exporterThread;
+    connect(exporterThread, &QDltExporter::progress,    this, &MainWindow::progress);
+    connect(exporterThread, &QDltExporter::resultReady, this, &MainWindow::handleExportResults);
+    connect(exporterThread, &QDltExporter::finished,    exporterThread, &QObject::deleteLater);
+    connect(exporterThread, &QDltExporter::finished, this, [this, exporterThread, ownedSelection]() {
+        if(ownedSelection)
+            delete ownedSelection;
+        if(activeExporterThread == exporterThread)
+            activeExporterThread = nullptr;
+    });
+    statusProgressBar->show();
+    exporterThread->setPriority(QThread::LowPriority);
+    exporterThread->start();
+    return true;
+}
+
+void MainWindow::stopExportIfRunning()
+{
+    if(!isExportInProgress())
+        return;
+
+    activeExporterThread->requestInterruption();
+    if(!activeExporterThread->wait(5000))
+    {
+        QMessageBox::warning(this, QString("DLT Viewer"),
+                             QString("Export is still stopping. Please try again in a moment."));
+    }
+}
+
 bool MainWindow::manualMarkerUnionEnabled() const
 {
     return settings && settings->includeManualMarkersInFilter && !isLiveLoggingActive();
@@ -1817,6 +1890,13 @@ void MainWindow::exportSelection(bool ascii = true,bool file = false,QDltExporte
     Q_UNUSED(ascii);
     Q_UNUSED(file);
 
+    if(isExportInProgress())
+    {
+        QMessageBox::information(this, QString("DLT Viewer"),
+                                 QString("An export is already in progress. Please wait until it finishes."));
+        return;
+    }
+
     QModelIndexList list = ui->tableView->selectionModel()->selection().indexes();
 
     filterUpdate(); // update filters of qfile before starting Exporting for RegEx operation
@@ -1829,15 +1909,29 @@ void MainWindow::exportSelection(bool ascii = true,bool file = false,QDltExporte
 
 void MainWindow::exportSelection_searchTable(QDltExporter::DltExportFormat format = QDltExporter::FormatClipboard, const QString& fileName)
 {
+    if(isExportInProgress()) {
+        QMessageBox::information(this, QString("DLT Viewer"),
+                                 QString("An export is already in progress. Please wait until it finishes."));
+        return;
+    }
+
+    // Validate critical pointers first
+    if (!ui->tableView_SearchIndex || !ui->tableView_SearchIndex->model() || !ui->tableView_SearchIndex->selectionModel()) {
+        return;
+    }
+    if (!m_searchtableModel || !ui->tableView || !ui->tableView->selectionModel()) {
+        return;
+    }
+    if (!tableModel) {
+        return;
+    }
+
     const QModelIndexList list = ui->tableView_SearchIndex->selectionModel()->selectedRows();
     QModelIndexList allRows;
     for (int row = 0; row < ui->tableView_SearchIndex->model()->rowCount(); ++row) {
         QModelIndex idx = ui->tableView_SearchIndex->model()->index(row, 0);
         allRows.append(idx);
     }
-
-    // Clear the selection from main table.
-    ui->tableView->selectionModel()->clear();
 
     // Determine which rows to process based on operation type and selection
     QModelIndexList rowsToProcess;
@@ -1850,6 +1944,28 @@ void MainWindow::exportSelection_searchTable(QDltExporter::DltExportFormat forma
         rowsToProcess = list;
     }
 
+    if (rowsToProcess.isEmpty()) {
+        return;
+    }
+
+    filterUpdate();
+    if (qfile.size() == 0) {
+        return;
+    }
+
+    QHash<qint64, int> filteredRowByEntry;
+    if (qfile.isFilter()) {
+        const QVector<qint64> filterIndices = qfile.getIndexFilter();
+        filteredRowByEntry.reserve(filterIndices.size());
+        for (int filteredRow = 0; filteredRow < filterIndices.size(); ++filteredRow) {
+            filteredRowByEntry.insert(filterIndices.at(filteredRow), filteredRow);
+        }
+    }
+
+    QModelIndexList exportIndices;
+    exportIndices.reserve(rowsToProcess.size());
+    QSet<int> seenRows;
+
     // Convert the index from search table to main table entry...
     foreach(QModelIndex index, rowsToProcess)
     {
@@ -1859,24 +1975,43 @@ void MainWindow::exportSelection_searchTable(QDltExporter::DltExportFormat forma
         if (! m_searchtableModel->get_SearchResultEntry(position, entry) )
             return;
 
-        //jump_to_line
-        int row = nearest_line(entry);
+        int row = qfile.isFilter() ? filteredRowByEntry.value(static_cast<qint64>(entry), -1)
+                                   : static_cast<int>(entry);
         if (0 > row)
-            return;
+            continue; // Skip entries that are no longer available in the current view
+        if (seenRows.contains(row)) {
+            continue;
+        }
 
         QModelIndex newIndex = tableModel->index(row, 0, QModelIndex());
-        // Select the row in main table mapping to the search table row
-        ui->tableView->blockSignals(true);
-        ui->tableView->selectionModel()->select(newIndex, QItemSelectionModel::Select|QItemSelectionModel::Rows);
-        ui->tableView->blockSignals(false);
+        if (!newIndex.isValid()) {
+            continue;
+        }
+        seenRows.insert(row);
+        exportIndices.append(newIndex);
     }
 
-    QModelIndexList finallist = ui->tableView->selectionModel()->selection().indexes();
-
-    filterUpdate(); // update filters of qfile before starting Exporting for RegEx operation
+    if (exportIndices.isEmpty()) {
+        return;
+    }
 
     QString exportFile = fileName.trimmed();
-    QDltExporter exporter(&qfile,exportFile,&pluginManager,format,QDltExporter::SelectionSelected,&finallist,project.settings->automaticTimeSettings,project.settings->utcOffset,project.settings->dst,QDltOptManager::getInstance()->getDelimiter(),QDltOptManager::getInstance()->getSignature());
+
+    if (!exportFile.isEmpty()) {
+        QModelIndexList *exportIndicesForThread = new QModelIndexList(exportIndices);
+        QDltExporter *exporterThread = new QDltExporter(&qfile, exportFile, &pluginManager, format,
+                                                       QDltExporter::SelectionSelected, exportIndicesForThread,
+                                                       project.settings->automaticTimeSettings,
+                                                       project.settings->utcOffset,
+                                                       project.settings->dst,
+                                                       QDltOptManager::getInstance()->getDelimiter(),
+                                                       QDltOptManager::getInstance()->getSignature(), this);
+        statusProgressBar->reset();
+        startExportThread(exporterThread, exportIndicesForThread);
+        return;
+    }
+
+    QDltExporter exporter(&qfile,exportFile,&pluginManager,format,QDltExporter::SelectionSelected,&exportIndices,project.settings->automaticTimeSettings,project.settings->utcOffset,project.settings->dst,QDltOptManager::getInstance()->getDelimiter(),QDltOptManager::getInstance()->getSignature());
     connect(&exporter,SIGNAL(clipboard(QString)),this,SLOT(clipboard(QString)));
     exporter.exportMessages();
     disconnect(&exporter,SIGNAL(clipboard(QString)),this,SLOT(clipboard(QString)));
@@ -1884,6 +2019,13 @@ void MainWindow::exportSelection_searchTable(QDltExporter::DltExportFormat forma
 
 void MainWindow::on_actionExport_triggered()
 {
+    if(isExportInProgress())
+    {
+        QMessageBox::information(this, QString("DLT Viewer"),
+                                 QString("An export is already in progress. Please wait until it finishes."));
+        return;
+    }
+
     /* export dialog */
     exporterDialog.setRange(0,qfile.size());
     exporterDialog.exec();
@@ -1983,21 +2125,18 @@ void MainWindow::on_actionExport_triggered()
 
     filterUpdate(); // update filters of qfile before starting Exporting for RegEx operation
 
+    QModelIndexList *selectionForThread = nullptr;
     if(exportSelection == QDltExporter::SelectionSelected) // marked messages
     {
-        exporterThread = new QDltExporter(&qfile, fileName, &pluginManager,exportFormat,exportSelection,&list,project.settings->automaticTimeSettings,project.settings->utcOffset,project.settings->dst,QDltOptManager::getInstance()->getDelimiter(),QDltOptManager::getInstance()->getSignature(),this);
+        selectionForThread = new QModelIndexList(list);
+        exporterThread = new QDltExporter(&qfile, fileName, &pluginManager,exportFormat,exportSelection,selectionForThread,project.settings->automaticTimeSettings,project.settings->utcOffset,project.settings->dst,QDltOptManager::getInstance()->getDelimiter(),QDltOptManager::getInstance()->getSignature(),this);
     }
     else
     {
         exporterThread = new QDltExporter(&qfile, fileName, &pluginManager,exportFormat,exportSelection,0,project.settings->automaticTimeSettings,project.settings->utcOffset,project.settings->dst,QDltOptManager::getInstance()->getDelimiter(),QDltOptManager::getInstance()->getSignature(),this);
         exporterThread->exportMessageRange(startix,stopix);
     }
-    connect(exporterThread, &QDltExporter::progress,    this, &MainWindow::progress);
-    connect(exporterThread, &QDltExporter::resultReady, this, &MainWindow::handleExportResults);
-    connect(exporterThread, &QDltExporter::finished,    exporterThread, &QObject::deleteLater);
-    statusProgressBar->show();
-    exporterThread->setPriority(QThread::LowPriority);
-    exporterThread->start();
+    startExportThread(exporterThread, selectionForThread);
 }
 
 void MainWindow::on_action_menuFile_SaveAs_triggered()
@@ -2334,15 +2473,11 @@ void MainWindow::reloadLogFileFinishFilter()
             item->initFileFinish();
         }
     }
-    // Enable index-based view when filters are active or time-based sorting is requested.
-    const bool filtersSettingEnabled = QDltSettingsManager::getInstance()->value("startup/filtersEnabled", true).toBool();
-    const bool sortByTimeEnabled = QDltSettingsManager::getInstance()->value("startup/sortByTimeEnabled", false).toBool();
-    const bool sortByTimestampEnabled = QDltSettingsManager::getInstance()->value("startup/sortByTimestampEnabled", false).toBool();
-    const bool shouldUseFilterIndex = shouldUseFilterIndexing(filtersSettingEnabled, sortByTimeEnabled, sortByTimestampEnabled);
 
-    qfile.enableFilter(shouldUseFilterIndex);
-    qfile.enableSortByTime(sortByTimeEnabled);
-    qfile.enableSortByTimestamp(sortByTimestampEnabled);
+    // enable filter if requested
+    qfile.enableFilter(QDltSettingsManager::getInstance()->value("startup/filtersEnabled", true).toBool());
+    qfile.enableSortByTime(QDltSettingsManager::getInstance()->value("startup/sortByTimeEnabled", false).toBool());
+    qfile.enableSortByTimestamp(QDltSettingsManager::getInstance()->value("startup/sortByTimestampEnabled", false).toBool());
 
     // updateIndex, if messages are received in between
     updateIndex();
@@ -2413,14 +2548,9 @@ void MainWindow::reloadLogFile(bool update, bool multithreaded)
     }
 
     // update indexFilter only if index already generated
-    const bool filtersSettingEnabled = QDltSettingsManager::getInstance()->value("startup/filtersEnabled", true).toBool();
-    const bool sortByTimeEnabled = QDltSettingsManager::getInstance()->value("startup/sortByTimeEnabled", false).toBool();
-    const bool sortByTimestampEnabled = QDltSettingsManager::getInstance()->value("startup/sortByTimestampEnabled", false).toBool();
-    const bool shouldIndexFilter = shouldUseFilterIndexing(filtersSettingEnabled, sortByTimeEnabled, sortByTimestampEnabled);
-
     if( true == update )
     {
-        if(shouldIndexFilter)
+        if(QDltSettingsManager::getInstance()->value("startup/filtersEnabled", true).toBool())
         {
             //qDebug() << "indexer with filter" << __LINE__;
             dltIndexer->setMode(DltFileIndexer::modeFilter);
@@ -2435,7 +2565,7 @@ void MainWindow::reloadLogFile(bool update, bool multithreaded)
     }
     else // no update
     {
-        if(shouldIndexFilter || pluginsEnabled == true)
+        if(QDltSettingsManager::getInstance()->value("startup/filtersEnabled", true).toBool() || pluginsEnabled == true)
         {
             //qDebug() << "indexer with filter" << __LINE__;
             dltIndexer->setMode(DltFileIndexer::modeIndexAndFilter);
@@ -2531,9 +2661,9 @@ void MainWindow::reloadLogFile(bool update, bool multithreaded)
     // enable plugins
     pluginsEnabled = QDltSettingsManager::getInstance()->value("startup/pluginsEnabled", true).toBool();
     dltIndexer->setPluginsEnabled(pluginsEnabled);
-    dltIndexer->setFiltersEnabled(filtersSettingEnabled );
-    dltIndexer->setSortByTimeEnabled(sortByTimeEnabled);
-    dltIndexer->setSortByTimestampEnabled(sortByTimestampEnabled);
+    dltIndexer->setFiltersEnabled(QDltSettingsManager::getInstance()->value("startup/filtersEnabled", true).toBool());
+    dltIndexer->setSortByTimeEnabled(QDltSettingsManager::getInstance()->value("startup/sortByTimeEnabled", false).toBool());
+    dltIndexer->setSortByTimestampEnabled(QDltSettingsManager::getInstance()->value("startup/sortByTimestampEnabled", false).toBool());
     dltIndexer->setMultithreaded(multithreaded);
     dltIndexer->setFilterCacheEnabled(settings->filterCache);
 
@@ -2758,7 +2888,7 @@ void MainWindow::on_action_menuProject_Open_triggered()
 
 }
 
-bool MainWindow::anyFiltersEnabled() const
+bool MainWindow::anyFiltersEnabled()
 {
     if(!(QDltSettingsManager::getInstance()->value("startup/filtersEnabled", true).toBool()))
     {
@@ -2775,16 +2905,6 @@ bool MainWindow::anyFiltersEnabled() const
         }
     }
     return foundEnabledFilter;
-}
-
-bool MainWindow::shouldUseFilterIndexing(bool filtersSettingEnabled,
-                                          bool sortByTimeEnabled,
-                                          bool sortByTimestampEnabled) const
-{
-    // Use filter indexing if:
-    // 1. User has active filters (when filtersSettingEnabled is true), OR
-    // 2. User requested time-based sorting (when filtersSettingEnabled is true)
-    return filtersSettingEnabled && (anyFiltersEnabled() || sortByTimeEnabled || sortByTimestampEnabled);
 }
 
 bool MainWindow::openDlfFile(QString fileName,bool replace)
@@ -3285,6 +3405,10 @@ void MainWindow::on_action_menuDLT_Edit_All_Log_Levels_triggered()
 
         QList<QTreeWidgetItem *> list = project.ecu->selectedItems();
 
+        // Capture selected values for next time dialog opens
+        logLevel = dlg.loglevel() + 1;
+        traceStatus = dlg.tracestatus() + 1;
+
         if(list.at(0)->type() == context_type){
             //Nothing to do
         }
@@ -3334,9 +3458,6 @@ void MainWindow::on_action_menuDLT_Edit_All_Log_Levels_triggered()
 
                     conitem->loglevel = dlg.loglevel();
                     conitem->tracestatus = dlg.tracestatus();
-
-                    logLevel = conitem->loglevel + 1;
-                    traceStatus = conitem->tracestatus +1;
 
                     /* update context item */
                     conitem->update();
@@ -8534,5 +8655,6 @@ void MainWindow::handleImportResults(const QString &)
 
 void MainWindow::handleExportResults(const QString &)
 {
+    activeExporterThread = nullptr;
     statusProgressBar->hide();
 }
