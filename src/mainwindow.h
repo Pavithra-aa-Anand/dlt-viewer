@@ -29,6 +29,7 @@
 #include <QComboBox>
 #include <QProgressBar>
 #include <QVector>
+#include <QPointer>
 
 #include <QTableWidget>
 #include <QAbstractItemModel>
@@ -109,6 +110,7 @@ namespace Ui {
 }
 
 struct EcuTree;
+class QDltExporter;
 
 class MainWindow : public QMainWindow
 {
@@ -169,6 +171,7 @@ private:
 
     /* Export */
     ExporterDialog exporterDialog;
+    QPointer<QDltExporter> activeExporterThread;
 
     /* Settings dialog containing also the settings parameter itself */
     SettingsDialog *settingsDlg;
@@ -286,6 +289,9 @@ private:
     void exportSelection(bool ascii,bool file,QDltExporter::DltExportFormat format);
     /* Exports search results from the search table view to clipboard or file in various formats. For clipboard operations: uses selected rows only and for file export operations: always exports all rows. */
     void exportSelection_searchTable(QDltExporter::DltExportFormat format, const QString& fileName = QString());
+    bool isExportInProgress() const;
+    bool startExportThread(QDltExporter *exporterThread, QModelIndexList *ownedSelection = nullptr);
+    void stopExportIfRunning();
 
     void ControlServiceRequest(EcuItem* ecuitem, uint32_t service_id);
     void SendInjection(EcuItem* ecuitem);
@@ -348,21 +354,7 @@ private:
 
     void sendUpdates(EcuItem* ecuitem);
 
-    bool anyFiltersEnabled() const;
-    
-    /**
-     * @brief Determine if filter indexing should be used based on settings and filters.
-     * This is the single source of truth for this decision, used in both
-     * reloadLogFile() and reloadLogFileFinishFilter() to ensure consistency.
-     *
-     * @param filtersSettingEnabled Whether filters are enabled in settings
-     * @param sortByTimeEnabled Whether sorting by time is enabled
-     * @param sortByTimestampEnabled Whether sorting by timestamp is enabled
-     * @return true if filter index should be created and used, false otherwise
-     */
-    bool shouldUseFilterIndexing(bool filtersSettingEnabled, 
-                                 bool sortByTimeEnabled, 
-                                 bool sortByTimestampEnabled) const;
+    bool anyFiltersEnabled();
 
     bool openDltFile(QStringList fileName);
     bool openDlpFile(QString filename);
