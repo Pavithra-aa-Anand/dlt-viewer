@@ -338,6 +338,17 @@ QVariant TableModel::headerData(int section, Qt::Orientation orientation,
      emit(layoutChanged());
  }
 
+void TableModel::batchInsertRows(int firstRow, int lastRow)
+{
+    if (firstRow > lastRow) return;
+
+    beginInsertRows(QModelIndex(), firstRow, lastRow);
+    endInsertRows();
+
+    // Emit signal for batch update event
+    emit batchUpdateEvent(firstRow, lastRow);
+}
+
 int TableModel::setManualMarker(QList<unsigned long int> selectedRows, QColor hlcolor) //used in mainwindow
 {
 manualMarkerColor = hlcolor;

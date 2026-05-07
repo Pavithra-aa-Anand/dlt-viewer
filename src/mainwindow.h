@@ -327,7 +327,6 @@ private:
     void checkConnectionState();
     void read(EcuItem *ecuitem);
     void updateIndex();
-    void drawUpdatedView();
 
     void syncCheckBoxesAndMenu();
 

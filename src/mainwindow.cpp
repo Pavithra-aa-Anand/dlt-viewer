@@ -3938,11 +3938,9 @@ void MainWindow::connectAll()
         connectECU(ecuitem);
     }
 
-    // periodically update table view to account for the new incoming messages
-    const int drawInterval = (settings->RefreshRate > 0) ? 1000 / settings->RefreshRate
-                                                         : 1000 / DEFAULT_REFRESH_RATE;
-    drawTimer.start(drawInterval);
-    connect(&drawTimer, &QTimer::timeout, this, &MainWindow::drawUpdatedView);
+    // Table updates are now handled directly in updateIndex() instead of using a timer
+    // drawTimer.start(drawInterval);
+    // connect(&drawTimer, &QTimer::timeout, this, &MainWindow::drawUpdatedView);
 }
 
 void MainWindow::disconnectAll()
@@ -4796,6 +4794,7 @@ void MainWindow::updateIndex()
     /* read received messages in DLT file parser and update DLT message list view */
     /* update indexes  and table view */
     int oldsize = qfile.size();
+    int oldFilterSize = qfile.sizeFilter();
     qfile.updateIndex();
 
     bool silentMode = !QDltOptManager::getInstance()->issilentMode();
@@ -4846,27 +4845,28 @@ void MainWindow::updateIndex()
 
     if(oldsize!=qfile.size())
     {
+        // Update the table model with batch insertion
+        int newFilterSize = qfile.sizeFilter();
+        if (oldFilterSize < newFilterSize) {
+            tableModel->batchInsertRows(oldFilterSize, newFilterSize - 1);
+        }
+
+        // Update status information
+        statusByteErrorsReceived->setText(QString("Recv Errors: %L1").arg(totalByteErrorsRcvd));
+        statusBytesReceived->setText(QString("Recv: %L1").arg(totalBytesRcvd));
+        statusSyncFoundReceived->setText(QString("Sync found: %L1").arg(totalSyncFoundRcvd));
+
+        // Handle auto-scroll
+        if(settings->autoScroll) {
+            ui->tableView->scrollToBottom();
+        }
+
         // only run through viewer plugins, if new messages are added
         for(int i = 0; i < activeViewerPlugins.size(); i++)
         {
             item = activeViewerPlugins.at(i);
             item->updateFileFinish();
         }
-    }
-}
-
-void MainWindow::drawUpdatedView()
-{
-    statusByteErrorsReceived->setText(QString("Recv Errors: %L1").arg(totalByteErrorsRcvd));
-    statusBytesReceived->setText(QString("Recv: %L1").arg(totalBytesRcvd));
-    statusSyncFoundReceived->setText(QString("Sync found: %L1").arg(totalSyncFoundRcvd));
-
-    tableModel->modelChanged();
-
-    //Line below would resize the payload column automatically so that the whole content is readable
-    //ui->tableView->resizeColumnToContents(11); //Column 11 is the payload column
-    if(settings->autoScroll) {
-        ui->tableView->scrollToBottom();
     }
 }
 
