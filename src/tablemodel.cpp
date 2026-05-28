@@ -20,6 +20,7 @@
 #include <QtGui>
 #include <QApplication>
 #include <qmessagebox.h>
+#include <QDebug>
 
 #include "tablemodel.h"
 #include "fieldnames.h"
@@ -345,10 +346,34 @@ QVariant TableModel::headerData(int section, Qt::Orientation orientation,
 
 void TableModel::batchInsertRows(int firstRow, int lastRow)
 {
-    if (firstRow > lastRow) return;
+    if (firstRow > lastRow) {
+        return;
+    }
+
+    if (firstRow < 0 || lastRow < 0) {
+        qWarning().nospace() << "[RowUpdate] Invalid batch insert range requested. rows="
+                             << firstRow << "-" << lastRow;
+        return;
+    }
+
+    const int currentRows = rowCount();
+
+    if (firstRow > currentRows) {
+        qWarning().nospace() << "[RowUpdate] Batch insert out of sync. firstRow="
+                             << firstRow << ", currentRows=" << currentRows
+                             << ". Resetting model to recover.";
+        beginResetModel();
+        endResetModel();
+        return;
+    }
 
     beginInsertRows(QModelIndex(), firstRow, lastRow);
     endInsertRows();
+
+    const int batchCount = lastRow - firstRow + 1;
+    qInfo().nospace() << "[RowUpdate] Batch appended without model refresh. rows="
+                     << firstRow << "-" << lastRow
+                     << ", count=" << batchCount;
 
     // Emit signal for batch update event
     emit batchUpdateEvent(firstRow, lastRow);
