@@ -193,6 +193,10 @@ bool QDltArgument::setArgument(QByteArray &payload,unsigned int &offset, QDlt::D
         if((unsigned int)payload.size()<(offset+length))
             return false;
         data = payload.mid(offset, static_cast<int>(length));
+        if ((typeInfo == DltTypeInfoStrg || typeInfo == DltTypeInfoUtf8) && !data.isEmpty() && data.back() == '\0')
+        {
+            data.chop(1);
+        }
         offset += length;
     }
     else if(typeInfo == DltTypeInfoBool)

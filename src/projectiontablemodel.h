@@ -6,13 +6,13 @@
 
 #include <vector>
 
-class ProjectionTableModel : public QAbstractTableModel
+class CProjectionTableModel : public QAbstractTableModel
 {
     Q_OBJECT
 
 public:
     //! Create a projection model with an optional QObject parent.
-    explicit ProjectionTableModel(QObject *parent = nullptr);
+    explicit CProjectionTableModel(QObject *parent = nullptr);
 
     //! Attach the source model used for projected row access.
     void setSourceModel(QAbstractItemModel *sourceModel);
@@ -59,3 +59,5 @@ private:
 };
 
 #endif // PROJECTIONTABLEMODEL_H
+
+

@@ -100,8 +100,8 @@ private:
     //! Apply column sizing and visibility settings.
     void applyColumnSettings();
     
-    ProjectionTableModel* m_crlfProjectionModel;
-    QAbstractTableModel* sourceModelOfDLT;
+    CProjectionTableModel* m_crlfProjectionModel;
+    QAbstractTableModel* m_sourceModelOfDLT;
     QWidget* m_crlfWindow;
     QTableView* m_crlfTableView;
     QLabel* m_statusLabel;
@@ -125,4 +125,6 @@ private:
 };
 
 #endif // CRLFFILTERWINDOW_H
+
+
 

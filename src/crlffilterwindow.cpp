@@ -22,7 +22,7 @@
 #include "qdltsettingsmanager.h"
 
 CrlfFilterWindow::CrlfFilterWindow(QObject* parent) : QObject(parent) {
-    sourceModelOfDLT = nullptr;
+    m_sourceModelOfDLT = nullptr;
     m_crlfProjectionModel = nullptr;
     m_crlfWindow = nullptr;
     m_crlfTableView = nullptr;
@@ -98,7 +98,7 @@ void CrlfFilterWindow::createCrlfWindow() {
         return;
     }
     
-    if (!sourceModelOfDLT) {
+    if (!m_sourceModelOfDLT) {
         QMessageBox::critical(nullptr, "Error", "No source model available for CRLF filtering.");
         return;
     }
@@ -115,9 +115,9 @@ void CrlfFilterWindow::createCrlfWindow() {
     
     // Create the model if it doesn't exist
     if (!m_crlfProjectionModel) {
-        m_crlfProjectionModel = new ProjectionTableModel(this);
+        m_crlfProjectionModel = new CProjectionTableModel(this);
     }
-    m_crlfProjectionModel->setSourceModel(sourceModelOfDLT);
+    m_crlfProjectionModel->setSourceModel(m_sourceModelOfDLT);
     
     // Check if no filtered messages exist
     int totalFilteredMessages = dltFile->sizeFilter();
@@ -212,7 +212,7 @@ void CrlfFilterWindow::createCrlfWindow() {
 
 // Exports all filtered CRLF DLT logs to a file
 void CrlfFilterWindow::onExportFilteredCrlfLogsClicked() {
-    if (!dltFile || !m_crlfProjectionModel || !sourceModelOfDLT || !m_crlfTableView || !m_crlfWindow) {
+    if (!dltFile || !m_crlfProjectionModel || !m_sourceModelOfDLT || !m_crlfTableView || !m_crlfWindow) {
         QMessageBox::information(nullptr, "Export Error", "No CRLF data available to export or window is not properly initialized.");
         return;
     }
@@ -246,7 +246,7 @@ void CrlfFilterWindow::onExportFilteredCrlfLogsClicked() {
             }
 
             const int sourceRow = m_crlfProjectionModel->sourceRowForRow(row);
-            const QModelIndex sourceIndex = sourceModelOfDLT->index(sourceRow, 0);
+            const QModelIndex sourceIndex = m_sourceModelOfDLT->index(sourceRow, 0);
             if (sourceIndex.isValid()) {
                 selectedIndices.append(sourceIndex);
             }
@@ -309,15 +309,15 @@ void CrlfFilterWindow::onExportFilteredCrlfLogsClicked() {
 // Sets the source model for DLT data
 void CrlfFilterWindow::setSourceModel(QAbstractTableModel* model) {
     // Disconnect from previous model if any
-    if (sourceModelOfDLT) {
-        disconnect(sourceModelOfDLT, nullptr, this, nullptr);
+    if (m_sourceModelOfDLT) {
+        disconnect(m_sourceModelOfDLT, nullptr, this, nullptr);
     }
     
-    sourceModelOfDLT = model;
+    m_sourceModelOfDLT = model;
     
-    if (sourceModelOfDLT) {
-        connect(sourceModelOfDLT, &QAbstractTableModel::modelReset, this, &CrlfFilterWindow::onSourceModelReset);
-        connect(sourceModelOfDLT, &QAbstractTableModel::layoutChanged, this, &CrlfFilterWindow::onSourceModelDataChanged);
+    if (m_sourceModelOfDLT) {
+        connect(m_sourceModelOfDLT, &QAbstractTableModel::modelReset, this, &CrlfFilterWindow::onSourceModelReset);
+        connect(m_sourceModelOfDLT, &QAbstractTableModel::layoutChanged, this, &CrlfFilterWindow::onSourceModelDataChanged);
         
         // Connect to parent's dltFileLoaded signal for file changes
         if (QObject* parentObj = parent()) {
@@ -374,8 +374,8 @@ void CrlfFilterWindow::cleanup() {
     }
     
     // Disconnect from source model to prevent further updates
-    if (sourceModelOfDLT) {
-        disconnect(sourceModelOfDLT, nullptr, this, nullptr);
+    if (m_sourceModelOfDLT) {
+        disconnect(m_sourceModelOfDLT, nullptr, this, nullptr);
     }
     
     // Clean up UI components - only detach model if both objects exist
@@ -392,7 +392,7 @@ void CrlfFilterWindow::cleanup() {
     m_crlfTableView = nullptr;
     m_crlfProjectionModel = nullptr;
     m_statusLabel = nullptr;
-    sourceModelOfDLT = nullptr;
+    m_sourceModelOfDLT = nullptr;
     m_crlfWindow = nullptr;
     dltFile = nullptr;
     pluginManager = nullptr;
@@ -459,7 +459,7 @@ void CrlfFilterWindow::onSourceModelDataChanged() {
     }
     
     // Additional validation: During model transitions, delay rebuild for stability
-    if (sourceModelOfDLT && sourceModelOfDLT->rowCount() != currentFilteredCount) {
+    if (m_sourceModelOfDLT && m_sourceModelOfDLT->rowCount() != currentFilteredCount) {
         // Model is in transition - schedule rebuild with delay for stability
         if (!m_rebuildScheduled && !m_rebuildTimer->isActive() && !m_rebuildInProgress) {
             m_rebuildScheduled = true;
@@ -591,7 +591,7 @@ void CrlfFilterWindow::onRebuildTimerTimeout() {
 // Public method to refresh the CRLF window with latest data
 void CrlfFilterWindow::refreshWindow() {
     if (m_crlfWindow && dltFile && m_crlfProjectionModel) {
-        m_crlfProjectionModel->setSourceModel(sourceModelOfDLT);
+        m_crlfProjectionModel->setSourceModel(m_sourceModelOfDLT);
         rebuildCrlfModel();
     } else if (!m_crlfWindow && dltFile) {
         // Window was closed but object still exists - recreate the window
@@ -686,4 +686,6 @@ std::vector<int> CrlfFilterWindow::buildCrlfProjectionRows(QWidget *progressPare
     buildProgress.close();
     return rows;
 }
+
+
 

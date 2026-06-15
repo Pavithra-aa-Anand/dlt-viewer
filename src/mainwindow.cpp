@@ -109,7 +109,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
     target_version_string = "";
 
-    searchDlg->loadSearchHistoryList(searchHistory);
+    m_searchDlg->loadSearchHistoryList(searchHistory);
     filterIsChanged = false;
 
     initState();
@@ -334,12 +334,12 @@ MainWindow::~MainWindow()
 
     QDltSettingsManager::close();
     delete ui;
-    delete tableModel;
-    delete searchDlg;
+    delete m_tableModel;
+    delete m_searchDlg;
     delete dltIndexer;
     delete m_shortcut_searchnext;
     delete m_shortcut_searchprev;
-    delete crlfFilterWindow;
+    delete m_crlfFilterWindow;
 }
 
 void MainWindow::initState()
@@ -442,13 +442,13 @@ void MainWindow::initState()
     updateRecentFiltersActions();
 
     /* initialise DLT file handling */
-    tableModel = new TableModel("Hello Tree");
-    tableModel->qfile = &qfile;
-    tableModel->project = &project;
-    tableModel->pluginManager = &pluginManager;
+    m_tableModel = new CTableModel("Hello Tree");
+    m_tableModel->qfile = &qfile;
+    m_tableModel->project = &project;
+    m_tableModel->pluginManager = &pluginManager;
 
     /* Bind MessageStore adapter to the active QDltFile */
-    messageStore.setFile(&qfile);
+    m_messageStore.setFile(&qfile);
 
     /* initialise project configuration */
     project.ecu = ui->configWidget;
@@ -586,7 +586,7 @@ void MainWindow::initView()
     header->installEventFilter(m_tableModel);
 
     /* For future use enable HTML View in Table */
-    //HtmlDelegate* delegate = new HtmlDelegate();
+    //CHtmlDelegate* delegate = new CHtmlDelegate();
     //ui->tableView->setItemDelegate(delegate);
     //ui->tableView->setItemDelegateForColumn(FieldNames::Payload,delegate);
 
@@ -720,8 +720,8 @@ void MainWindow::initSignalConnections()
     }
 
     /* Connect RegExp settings from and to search dialog */
-    connect(m_searchActions.at(ToolbarPosition::Regexp), SIGNAL(toggled(bool)), searchDlg->regexpCheckBox, SLOT(setChecked(bool)));
-    connect(searchDlg->regexpCheckBox, SIGNAL(toggled(bool)), m_searchActions.at(ToolbarPosition::Regexp), SLOT(setChecked(bool)));
+    connect(m_searchActions.at(ToolbarPosition::Regexp), SIGNAL(toggled(bool)), m_searchDlg->regexpCheckBox, SLOT(setChecked(bool)));
+    connect(m_searchDlg->regexpCheckBox, SIGNAL(toggled(bool)), m_searchActions.at(ToolbarPosition::Regexp), SLOT(setChecked(bool)));
 
     /* Connect previous and next buttons to search dialog slots */
     connect(m_searchActions.at(ToolbarPosition::FindPrevious), SIGNAL(triggered()), m_searchDlg, SLOT(findPreviousClicked()));
@@ -771,19 +771,19 @@ void MainWindow::initSearchTable()
 {
 
     //init search Dialog
-    searchDlg = new SearchDialog(this);
-    searchDlg->file = &qfile;
-    searchDlg->table = ui->tableView;
-    searchDlg->pluginManager = &pluginManager;
+    m_searchDlg = new CSearchDialog(this);
+    m_searchDlg->file = &qfile;
+    m_searchDlg->table = ui->tableView;
+    m_searchDlg->pluginManager = &pluginManager;
 
     /* initialise DLT Search handling */
-    m_searchtableModel = new SearchTableModel("Search Index Mainwindow");
+    m_searchtableModel = new CSearchTableModel("Search Index Mainwindow");
     m_searchtableModel->qfile = &qfile;
     m_searchtableModel->project = &project;
     m_searchtableModel->pluginManager = &pluginManager;
 
     /* Ensure MessageStore adapter is pointing at the same QDltFile instance */
-    messageStore.setFile(&qfile);
+    m_messageStore.setFile(&qfile);
 
     m_searchDlg->registerSearchTableModel(m_searchtableModel);
 
@@ -1249,8 +1249,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
     {
         QMainWindow::closeEvent(event);
     }
-    if(searchDlg){
-            searchDlg->saveSearchHistory(searchHistory);
+    if(m_searchDlg){
+            m_searchDlg->saveSearchHistory(searchHistory);
     }
     if(searchInput){
                 searchInput->saveComboBoxSearchHistory();
@@ -1390,9 +1390,9 @@ void MainWindow::onOpenTriggered(QStringList filenames)
     outputfileIsFromCLI = false;
     outputfileIsTemporary = false;
 
-    searchDlg->setMatch(false);
-    searchDlg->focusRow(-1);
-    searchDlg->setStartLine(-1);
+    m_searchDlg->setMatch(false);
+    m_searchDlg->focusRow(-1);
+    m_searchDlg->setStartLine(-1);
 }
 
 
@@ -1450,7 +1450,7 @@ bool MainWindow::openDltFile(QStringList fileNames)
     }
 
     // clear the cache stored for the history
-    searchDlg->clearCacheHistory();
+    m_searchDlg->clearCacheHistory();
     onAddActionToHistory();
     if(outputfile.isOpen())
     {
@@ -1835,7 +1835,7 @@ bool MainWindow::manualMarkerUnionEnabled() const
 
 void MainWindow::updateManualMarkerUnionInFilter()
 {
-    if(!settings || !tableModel)
+    if(!settings || !m_tableModel)
         return;
 
     if(manualMarkerUnionEnabled())
@@ -1844,17 +1844,17 @@ void MainWindow::updateManualMarkerUnionInFilter()
         qfile.setManualMarkerIndices(QList<unsigned long int>());
 
     if(qfile.isFilter())
-        tableModel->modelChanged();
+        m_tableModel->modelChanged();
 }
 
 void MainWindow::clearManualMarkerUnionInFilter()
 {
-    if(!tableModel)
+    if(!m_tableModel)
         return;
 
     qfile.setManualMarkerIndices(QList<unsigned long int>());
     if(qfile.isFilter())
-        tableModel->modelChanged();
+        m_tableModel->modelChanged();
 }
 
 void MainWindow::mark_unmark_lines()
@@ -1862,7 +1862,7 @@ void MainWindow::mark_unmark_lines()
     if(!ui || !ui->tableView || !ui->tableView->model() || !ui->tableView->selectionModel())
         return;
 
-    TableModel *model = qobject_cast<TableModel *>(ui->tableView->model());
+    CTableModel *model = qobject_cast<CTableModel *>(ui->tableView->model());
     if(!model)
         return;
 
@@ -1878,8 +1878,8 @@ void MainWindow::mark_unmark_lines()
     for(const QModelIndex &index : selectedRows)
     {
         const int row = index.row();
-        const MessageId messageId = messageStore.messageIdForFilteredRow(row);
-        const int msgIndex = (messageId == kInvalidMessageId) ? -1 : messageStore.globalIndexForMessageId(messageId);
+        const MessageId messageId = m_messageStore.messageIdForFilteredRow(row);
+        const int msgIndex = (messageId == kInvalidMessageId) ? -1 : m_messageStore.globalIndexForMessageId(messageId);
         if(msgIndex < 0)
             continue;
 
@@ -1911,7 +1911,7 @@ void MainWindow::unmark_all_lines()
     if(!ui || !ui->tableView || !ui->tableView->model())
         return;
 
-    TableModel *model = qobject_cast<TableModel *>(ui->tableView->model());
+    CTableModel *model = qobject_cast<CTableModel *>(ui->tableView->model());
     if(!model)
         return;
 
@@ -2091,7 +2091,7 @@ void MainWindow::exportSelection_searchTable(QDltExporter::DltExportFormat forma
             continue;
         }
 
-        QModelIndex newIndex = tableModel->index(row, 0, QModelIndex());
+        QModelIndex newIndex = m_tableModel->index(row, 0, QModelIndex());
         if (!newIndex.isValid()) {
             continue;
         }
@@ -2396,7 +2396,7 @@ void MainWindow::on_action_menuFile_Clear_triggered()
         searchHistoryActs[i]->setVisible(false);
     }
     // clear the cache stored for the history
-    searchDlg->clearCacheHistory();
+    m_searchDlg->clearCacheHistory();
 
     QString oldfn = outputfile.fileName();
 
@@ -2421,7 +2421,7 @@ void MainWindow::on_action_menuFile_Clear_triggered()
     autoloadPluginsVersionStrings.clear();
 
     /* Clear decode cache when file is cleared/replaced */
-    decodeCacheService.clearForFile(&qfile);
+    m_decodeCacheService.clearForFile(&qfile);
 
     if(true == outputfile.open(QIODevice::WriteOnly|QIODevice::Truncate))
     {
@@ -2575,11 +2575,11 @@ void MainWindow::reloadLogFileVersionString(QString ecuId, QString version)
 void MainWindow::reloadLogFileFinishIndex()
 {
     /* Repoint MessageStore adapter to current file after index reload */
-    messageStore.setFile(&qfile);
+    m_messageStore.setFile(&qfile);
 
     // show already unfiltered messages
-    tableModel->setForceEmpty(false);
-    tableModel->modelChanged();
+    m_tableModel->setForceEmpty(false);
+    m_tableModel->modelChanged();
     this->update(); // force update
     restoreSelection();
 
@@ -2631,14 +2631,14 @@ void MainWindow::reloadLogFileFinishFilter()
     updateIndex();
 
     /* Rebuild IndexService projection snapshot after filter is applied */
-    indexService.snapshotProjection(buildActiveFilteredProjection(&qfile));
+    m_indexService.snapshotProjection(buildActiveFilteredProjection(&qfile));
 
     /* Invalidate decode cache for stale decoded entries after filter change */
-    decodeCacheService.clearForFile(&qfile);
+    m_decodeCacheService.clearForFile(&qfile);
 
     // update table
-    tableModel->setForceEmpty(false);
-    tableModel->modelChanged();
+    m_tableModel->setForceEmpty(false);
+    m_tableModel->modelChanged();
     this->update(); // force update
     restoreSelection();
     m_searchtableModel->modelChanged();
@@ -2651,8 +2651,8 @@ void MainWindow::reloadLogFileFinishFilter()
         QDltMsg msg;
         EcuTree ecuTree;
         for (const auto msgIndex : msgIndexList) {
-            const MessageId messageId = messageStore.messageIdForGlobalIndex(msgIndex);
-            if (messageId != kInvalidMessageId && messageStore.message(messageId, msg)) {
+            const MessageId messageId = m_messageStore.messageIdForGlobalIndex(msgIndex);
+            if (messageId != kInvalidMessageId && m_messageStore.message(messageId, msg)) {
                 auto ctrlMsg = qdlt::msg::payload::parse(msg.getPayload(), msg.getEndianness() == QDlt::DltEndiannessBigEndian);
                 std::visit([&ecuTree, ecuId = msg.getEcuid()](auto&& payload) {
                     using T = std::decay_t<decltype(payload)>;
@@ -2685,8 +2685,8 @@ void MainWindow::reloadLogFile(bool update, bool multithreaded)
 {
     qint64 fileerrors = 0;
     /* check if in logging only mode, then do not create index */
-    tableModel->setLoggingOnlyMode(settings->loggingOnlyMode);
-    tableModel->modelChanged();
+    m_tableModel->setLoggingOnlyMode(settings->loggingOnlyMode);
+    m_tableModel->modelChanged();
     
     if( 0 != settings->loggingOnlyMode )
     {
@@ -2755,8 +2755,8 @@ void MainWindow::reloadLogFile(bool update, bool multithreaded)
     ui->dockWidgetSearchIndex->setWindowTitle(title);
 
     // force empty table
-    tableModel->setForceEmpty(true);
-    tableModel->modelChanged();
+    m_tableModel->setForceEmpty(true);
+    m_tableModel->modelChanged();
 
     // Per-file UI state must not leak across opened files.
     // Clear manual markers (and dependent filter inclusion) when doing a full reload.
@@ -2764,7 +2764,7 @@ void MainWindow::reloadLogFile(bool update, bool multithreaded)
     {
         selectedMarkerRows.clear();
 
-        tableModel->setManualMarker(
+        m_tableModel->setManualMarker(
             selectedMarkerRows,
             QColor(settings->markercolorRed, settings->markercolorGreen, settings->markercolorBlue));
 
@@ -2984,8 +2984,8 @@ void MainWindow::on_action_menuFile_Settings_triggered()
 
         if(loggingOnlyMode!=settings->loggingOnlyMode)
         {
-            tableModel->setLoggingOnlyMode(settings->loggingOnlyMode);
-            tableModel->modelChanged();
+            m_tableModel->setLoggingOnlyMode(settings->loggingOnlyMode);
+            m_tableModel->modelChanged();
             /* to remove ?? - in case logging only is disbaled the file is reloaded anyway
             if(false == settings->loggingOnlyMode)
             {
@@ -3001,7 +3001,7 @@ void MainWindow::on_action_menuFile_Settings_triggered()
         updateManualMarkerUnionInFilter();
 
         // update table, perhaps settings changed table, e.g. number of columns
-        tableModel->modelChanged();
+        m_tableModel->modelChanged();
     }
 }
 
@@ -4200,7 +4200,7 @@ void MainWindow::connectECU(EcuItem* ecuitem,bool force)
     if(false == ecuitem->tryToConnect || true == force)
     {
         // Handle CRLF window when ECU connects
-        if (crlfFilterWindow) {
+        if (m_crlfFilterWindow) {
             // Show warning to user about switching to live logging
             QMessageBox::StandardButton reply = QMessageBox::question(this, 
                 "CRLF Window Open", 
@@ -4213,8 +4213,8 @@ void MainWindow::connectECU(EcuItem* ecuitem,bool force)
                 return; // User cancelled ECU connection
             }
             
-            crlfFilterWindow->closeWindow();
-            crlfFilterWindow = nullptr;
+            m_crlfFilterWindow->closeWindow();
+            m_crlfFilterWindow = nullptr;
         }
         
         // because it does not work reliably during live logging.
@@ -4977,8 +4977,8 @@ void MainWindow::updateIndex()
 
     for(int num=oldsize;num<qfile.size();num++)
     {
-     const MessageId messageId = messageStore.messageIdForGlobalIndex(num);
-     if (messageId == kInvalidMessageId || !messageStore.message(messageId, qmsg))
+     const MessageId messageId = m_messageStore.messageIdForGlobalIndex(num);
+     if (messageId == kInvalidMessageId || !m_messageStore.message(messageId, qmsg))
      {
          continue;
      }
@@ -5020,7 +5020,7 @@ void MainWindow::updateIndex()
         }
 
         /* Repoint MessageStore to updated file after live index growth */
-        messageStore.setFile(&qfile);
+        m_messageStore.setFile(&qfile);
     }
 }
 
@@ -5030,7 +5030,7 @@ void MainWindow::drawUpdatedView()
     statusBytesReceived->setText(QString("Recv: %L1").arg(totalBytesRcvd));
     statusSyncFoundReceived->setText(QString("Sync found: %L1").arg(totalSyncFoundRcvd));
 
-    tableModel->modelChanged();
+    m_tableModel->modelChanged();
 
     //Line below would resize the payload column automatically so that the whole content is readable
     //ui->tableView->resizeColumnToContents(11); //Column 11 is the payload column
@@ -5073,12 +5073,12 @@ void MainWindow::onTableViewSelectionChanged(const QItemSelection & selected, co
         //scroll manually because autoscroll is off
         ui->tableView->scrollTo(index);
 
-        const MessageId messageId = messageStore.messageIdForFilteredRow(index.row());
-        if (messageId == kInvalidMessageId || !messageStore.message(messageId, msg))
+        const MessageId messageId = m_messageStore.messageIdForFilteredRow(index.row());
+        if (messageId == kInvalidMessageId || !m_messageStore.message(messageId, msg))
         {
             return;
         }
-        msgIndex = messageStore.globalIndexForMessageId(messageId);
+        msgIndex = m_messageStore.globalIndexForMessageId(messageId);
         msg.setIndex(msgIndex);
         activeViewerPlugins = pluginManager.getViewerPlugins();
         activeDecoderPlugins = pluginManager.getDecoderPlugins();
@@ -6502,12 +6502,12 @@ void MainWindow::stateChangedIP(QAbstractSocket::SocketState socketState)
 
 void MainWindow::on_action_menuSearch_Find_triggered()
 {
-    if (searchDlg->needTimeRangeReset() && qfile.size() > 0) {
+    if (m_searchDlg->needTimeRangeReset() && qfile.size() > 0) {
         QDltMsg firstMessage, lastMessage;
-    const auto &allIds = messageStore.snapshotAllMessageIds();
+    const auto &allIds = m_messageStore.snapshotAllMessageIds();
     const bool success = !allIds.empty()
-        && messageStore.message(allIds.front(), firstMessage)
-        && messageStore.message(allIds.back(), lastMessage);
+        && m_messageStore.message(allIds.front(), firstMessage)
+        && m_messageStore.message(allIds.back(), lastMessage);
         if (success) {
             qint64 firstTimestampMSecsSinceEpoch = firstMessage.getTime() * 1000 + firstMessage.getMicroseconds() / 1000;
             QDateTime firstTimestamp = QDateTime::fromMSecsSinceEpoch(firstTimestampMSecsSinceEpoch);
@@ -6515,12 +6515,12 @@ void MainWindow::on_action_menuSearch_Find_triggered()
             qint64 lastTimestampMSecsSinceEpoch = lastMessage.getTime() * 1000 + lastMessage.getMicroseconds() / 1000;
             QDateTime lastTimestamp = QDateTime::fromMSecsSinceEpoch(lastTimestampMSecsSinceEpoch);
 
-            searchDlg->setTimeRange(firstTimestamp, lastTimestamp);
+            m_searchDlg->setTimeRange(firstTimestamp, lastTimestamp);
         }
     }
 
-    searchDlg->open();
-    searchDlg->selectText();
+    m_searchDlg->open();
+    m_searchDlg->selectText();
 }
 
 //----------------------------------------------------------------------------
@@ -6983,8 +6983,8 @@ void MainWindow::filterIndexStart()
         }
     }
 
-    const MessageId messageId = messageStore.messageIdForFilteredRow(index.row());
-    const int pos = (messageId == kInvalidMessageId) ? -1 : messageStore.globalIndexForMessageId(messageId);
+    const MessageId messageId = m_messageStore.messageIdForFilteredRow(index.row());
+    const int pos = (messageId == kInvalidMessageId) ? -1 : m_messageStore.globalIndexForMessageId(messageId);
     ui->lineEditFilterStart->setText(QString("%1").arg(pos));
 }
 
@@ -7009,8 +7009,8 @@ void MainWindow::filterIndexEnd()
         }
     }
 
-    const MessageId messageId = messageStore.messageIdForFilteredRow(index.row());
-    const int pos = (messageId == kInvalidMessageId) ? -1 : messageStore.globalIndexForMessageId(messageId);
+    const MessageId messageId = m_messageStore.messageIdForFilteredRow(index.row());
+    const int pos = (messageId == kInvalidMessageId) ? -1 : m_messageStore.globalIndexForMessageId(messageId);
     ui->lineEditFilterEnd->setText(QString("%1").arg(pos));
 }
 
@@ -7020,12 +7020,12 @@ void MainWindow::splitLogsEcuid()
     QAbstractTableModel* sourceModel = qobject_cast<QAbstractTableModel*>(ui->tableView->model());
     int rowCount = sourceModel->rowCount();
     if (qfile.getNumberOfFiles() > 0) {
-        filtergrouplogs *filterLogsEcuid = new filtergrouplogs(this);
+        CFilterGroupLogs *filterLogsEcuid = new CFilterGroupLogs(this);
         filterLogsEcuid->setDltFile(&qfile);
         filterLogsEcuid->setPluginManager(&pluginManager);
-        filterLogsEcuid->setMessageStore(&messageStore);
-        filterLogsEcuid->setIndexService(&indexService);
-        filterLogsEcuid->setDecodeCacheService(&decodeCacheService);
+        filterLogsEcuid->setMessageStore(&m_messageStore);
+        filterLogsEcuid->setIndexService(&m_indexService);
+        filterLogsEcuid->setDecodeCacheService(&m_decodeCacheService);
 
         // Get the path of the currently loaded DLT file
         QString currentFilePath = qfile.getFileName(0);
@@ -7070,9 +7070,9 @@ void MainWindow::showCrlfMessages()
         return;
     }
     // Check if CRLF window already exists
-    if (crlfFilterWindow) {
-        crlfFilterWindow->refreshWindow();
-        crlfFilterWindow->showAndActivate();
+    if (m_crlfFilterWindow) {
+        m_crlfFilterWindow->refreshWindow();
+        m_crlfFilterWindow->showAndActivate();
         return;
     }
     // Create new CRLF window
@@ -7080,9 +7080,9 @@ void MainWindow::showCrlfMessages()
     m_crlfFilterWindow->setSourceModel(m_tableModel);
     m_crlfFilterWindow->setDltFile(&qfile);
     m_crlfFilterWindow->setPluginManager(&pluginManager);
-    m_crlfFilterWindow->setMessageStore(&messageStore);
-    m_crlfFilterWindow->setIndexService(&indexService);
-    m_crlfFilterWindow->setDecodeCacheService(&decodeCacheService);
+    m_crlfFilterWindow->setMessageStore(&m_messageStore);
+    m_crlfFilterWindow->setIndexService(&m_indexService);
+    m_crlfFilterWindow->setDecodeCacheService(&m_decodeCacheService);
     
     // Connect navigation signal to allow double-click navigation to main window
     connect(m_crlfFilterWindow, &CrlfFilterWindow::jumpToMessageRequested, this, &MainWindow::jump_to_line);
@@ -7094,7 +7094,7 @@ void MainWindow::showCrlfMessages()
         m_crlfFilterWindow = nullptr;
     });
     // Create and show the CRLF filter window
-    crlfFilterWindow->createCrlfWindow();
+    m_crlfFilterWindow->createCrlfWindow();
 }
 
 void MainWindow::filterAddTable() {
@@ -7118,14 +7118,14 @@ void MainWindow::filterAddTable() {
         }
     }
 
-    const MessageId messageId = messageStore.messageIdForFilteredRow(index.row());
-    if (messageId == kInvalidMessageId || !messageStore.message(messageId, msg))
+    const MessageId messageId = m_messageStore.messageIdForFilteredRow(index.row());
+    if (messageId == kInvalidMessageId || !m_messageStore.message(messageId, msg))
     {
         QMessageBox::critical(0, QString("DLT Viewer"),
                               QString("Unable to resolve selected message"));
         return;
     }
-    msg.setIndex(messageStore.globalIndexForMessageId(messageId));
+    msg.setIndex(m_messageStore.globalIndexForMessageId(messageId));
 
     /* decode message if necessary */
     iterateDecodersForMsg(msg,!QDltOptManager::getInstance()->issilentMode());
@@ -7352,7 +7352,7 @@ void MainWindow::filterDialogRead(FilterDialog &dlg,FilterItem* item)
     }
     if(item->filter.isMarker())
     {
-        tableModel->modelChanged();
+        m_tableModel->modelChanged();
         QVector<qint64> indices;
         if(qfile.isFilter())
         {
@@ -8100,7 +8100,7 @@ void MainWindow::iterateDecodersForMsg(QDltMsg &msg, int triggeredByUser)
         {
             QDltMsg decoded;
             const bool decodeEnabled = true;
-            if (decodeCacheService.message(&qfile,
+            if (m_decodeCacheService.message(&qfile,
                                              &pluginManager,
                                              index,
                                              decodeEnabled,
@@ -8113,7 +8113,7 @@ void MainWindow::iterateDecodersForMsg(QDltMsg &msg, int triggeredByUser)
             }
         }
 
-        (void)decodeCacheService.decode(&pluginManager, triggeredByUser, msg);
+        (void)m_decodeCacheService.decode(&pluginManager, triggeredByUser, msg);
     }
 }
 
@@ -8291,7 +8291,7 @@ bool MainWindow::jump_to_line(int line)
     else if(project.settings->showPayload == 1)
         column = FieldNames::Payload;
 
-    QModelIndex idx = tableModel->index(row, column, QModelIndex());
+    QModelIndex idx = m_tableModel->index(row, column, QModelIndex());
     ui->tableView->scrollTo(idx, QAbstractItemView::PositionAtTop);
     ui->tableView->selectionModel()->select(idx, QItemSelectionModel::Select|QItemSelectionModel::Rows);
     ui->tableView->setFocus();
@@ -8480,8 +8480,8 @@ void MainWindow::saveSelection()
     for(int i=0;i<rows.count();i++)
     {
         int sr = rows.at(i).row();
-        const MessageId messageId = messageStore.messageIdForFilteredRow(sr);
-        const int globalIndex = (messageId == kInvalidMessageId) ? -1 : messageStore.globalIndexForMessageId(messageId);
+        const MessageId messageId = m_messageStore.messageIdForFilteredRow(sr);
+        const int globalIndex = (messageId == kInvalidMessageId) ? -1 : m_messageStore.globalIndexForMessageId(messageId);
         previousSelection.append(globalIndex);
         //qDebug() << "Save Selection " << i << " at line " << globalIndex;
     }
@@ -8490,7 +8490,7 @@ void MainWindow::saveSelection()
 void MainWindow::restoreSelection()
 {
     int firstIndex = 0;
-    //QModelIndex scrollToTarget = tableModel->index(0, 0);
+    //QModelIndex scrollToTarget = m_tableModel->index(0, 0);
     QItemSelection newSelection;
 
     // clear current selection model
@@ -8522,7 +8522,7 @@ void MainWindow::restoreSelection()
             firstIndex = nearestIndex;
         }
 
-        QModelIndex idx = tableModel->index(nearestIndex, col);
+        QModelIndex idx = m_tableModel->index(nearestIndex, col);
 
         newSelection.select(idx, idx);
     }
@@ -8532,7 +8532,7 @@ void MainWindow::restoreSelection()
 
     // scroll to first selected row
     ui->tableView->setFocus();  // focus must be set before scrollto is possible
-    QModelIndex idx = tableModel->index(firstIndex, col, QModelIndex());
+    QModelIndex idx = m_tableModel->index(firstIndex, col, QModelIndex());
     ui->tableView->scrollTo(idx, QAbstractItemView::PositionAtTop);
 }
 
@@ -8551,7 +8551,7 @@ void MainWindow::on_tabWidget_currentChanged(int index)
 void MainWindow::filterOrderChanged()
 {
     filterUpdate();
-    tableModel->modelChanged();
+    m_tableModel->modelChanged();
 }
 
 void MainWindow::filterCountChanged()
@@ -8559,7 +8559,7 @@ void MainWindow::filterCountChanged()
     // update filters on the DLT file itself
     filterUpdate();
     // update the currently shown table
-    tableModel->modelChanged();
+    m_tableModel->modelChanged();
     // enable the "Apply" button
     applyConfigEnabled(true);
     // update the menu entries based on current selection
@@ -8587,7 +8587,7 @@ void MainWindow::searchtable_cellSelected( QModelIndex index)
     if (! m_searchtableModel->get_SearchResultEntry(position, entry) )
         return;
 
-    tableModel->setLastSearchIndex(entry);
+    m_tableModel->setLastSearchIndex(entry);
     jump_to_line(entry);
 
 }
@@ -8707,7 +8707,7 @@ void MainWindow::on_actionMarker_triggered()
 
 void MainWindow::onAddActionToHistory()
 {
-    QString searchText = searchDlg->getText();
+    QString searchText = m_searchDlg->getText();
 
     if((!searchHistory.contains(searchText,Qt::CaseInsensitive)) && !searchText.isEmpty())
     {
@@ -8849,5 +8849,7 @@ void MainWindow::handleExportResults(const QString &)
     activeExporterThread = nullptr;
     statusProgressBar->hide();
 }
+
+
 
 
