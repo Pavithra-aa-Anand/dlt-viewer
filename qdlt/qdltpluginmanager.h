@@ -20,6 +20,13 @@ class QMutex;
 class QDLT_EXPORT QDltPluginManager : public QDltMessageDecoder
 {
 public:
+  enum class PluginStage
+  {
+    Ingest,
+    Decode,
+    Enrich
+  };
+
     //! The number of plugins
     /*!
       \return the number of loaded plugins.
@@ -82,6 +89,7 @@ public:
 
 private:
     mutable QMutex pluginListMutex;
+    mutable QMutex m_decodeStageMutex;
 
     //! The list of pointers to all loaded plugins
     QList<QDltPlugin*> plugins;
