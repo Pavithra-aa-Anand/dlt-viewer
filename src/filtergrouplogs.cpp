@@ -1,4 +1,4 @@
-#include <QListWidget>
+﻿#include <QListWidget>
 #include <QBoxLayout>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -13,8 +13,12 @@
 #include <QEventLoop>
 #include <algorithm>
 
+#include <algorithm>
+
 #include "filtergrouplogs.h"
 #include "fieldnames.h"
+#include "indexservice.h"
+#include "qdltfileprojection.h"
 #include "qdltfile.h"
 #include "qdltexporter.h"
 #include "qdltsettingsmanager.h"
@@ -24,6 +28,9 @@ CFilterGroupLogs::CFilterGroupLogs(QObject* parent) : QObject(parent) {
     m_mergedTabWidget = nullptr;
     dltFile = nullptr;
     pluginManager = nullptr;
+    messageStore = nullptr;
+    indexService = nullptr;
+    decodeCacheService = nullptr;
 }
 
 // Extracts unique ECU IDs from a DLT file
@@ -74,23 +81,28 @@ QStringList CFilterGroupLogs::extractEcuIds(const QString& dltFilePath) {
     if (!dltFile.open(dltFilePath)) {
         return QStringList();
     }
+    if (!dltFile.createIndex()) {
+        dltFile.close();
+        return QStringList();
+    }
+    CDecodeCacheService localDecodeCacheService;
+    CDecodeCacheService *decodeService = decodeCacheService ? decodeCacheService : &localDecodeCacheService;
+    for (int i = 0; i < dltFile.size(); i++) {
+        QDltMsg msg;
+        const bool decodeEnabled = false;
+        const int triggeredByUser = 0;
+        const bool ok = decodeService->message(&dltFile,
+                                               pluginManager,
+                                               i,
+                                               decodeEnabled,
+                                               triggeredByUser,
+                                               msg,
+                                               true);
 
-    const int totalRows = sourceModelOfDLT->rowCount();
-    for(int row = 0; row < totalRows; ++row)
-    {
-        if(progress)
-        {
-            if(progress->wasCanceled())
-            {
-                ecuRowReferences.clear();
-                extractedEcuIds.clear();
-                return;
-            }
-
-            if((row % 100) == 0 || row + 1 == totalRows)
-            {
-                progress->setValue(row + 1);
-                QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        if (ok) {
+            QString ecuId = msg.getEcuid();
+            if (!ecuId.isEmpty()) {
+                uniqueEcuIds.insert(ecuId);
             }
         }
 
@@ -278,6 +290,7 @@ void CFilterGroupLogs::ecuIdTabs(){
     /* Main Tab Window */
     QWidget* tabWindow = new QWidget;
     tabWindow->setAttribute(Qt::WA_DeleteOnClose);
+    connect(tabWindow, &QWidget::destroyed, this, &QObject::deleteLater);
     tabWindow->setWindowTitle("DLT Logs by ECU");
     tabWindow->resize(1000, 600);
     QVBoxLayout* layout = new QVBoxLayout(tabWindow);
@@ -318,28 +331,24 @@ void CFilterGroupLogs::ecuIdTabs(){
             tabWindow->deleteLater();
             return;
         }
-
         const QString &ecuId = availableEcuIds[i];
-        createOrUpdateTab(ecuId, ecuRowReferences.value(ecuId));
-        tabToSelectedIds[ecuTabViews.value(ecuId)] = QStringList{ecuId};
-        if((i % 5) == 0 || i + 1 == availableEcuIds.size())
-        {
-            progress.setValue(i + 1);
-            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-        }
-        CProjectionTableModel *projectionModel = new CProjectionTableModel(this);
+        int progressValue = ((i + 1) * 100) / totalEcuIds;
+        loadingDialog.setValue(progressValue);
+        QCoreApplication::processEvents();
+
+        ProjectionTableModel *projectionModel = new ProjectionTableModel(this);
         projectionModel->setSourceModel(m_sourceModelOfDLT);
         const auto projectionIt = m_ecuSourceRowProjection.find(ecuId.trimmed().toLower());
         projectionModel->setProjectionRows(projectionIt != m_ecuSourceRowProjection.end() ? projectionIt->second : std::vector<int>());
 
         QTableView* view = new QTableView;
-        view->setModel(ecuIdFilterProxy);
+        view->setModel(projectionModel);
         view->horizontalHeader()->setStretchLastSection(true);
         view->setSelectionBehavior(QAbstractItemView::SelectRows);
         view->resizeColumnsToContents();
         // Hide unwanted columns
         auto settings = QDltSettingsManager::getInstance();
-        for (int col = 0; col < ecuIdFilterProxy->columnCount(); ++col) {
+        for (int col = 0; col < projectionModel->columnCount(); ++col) {
             bool show = FieldNames::getColumnShown(static_cast<FieldNames::Fields>(col), settings);
             view->setColumnHidden(col, !show);
             if (show) {
@@ -422,7 +431,6 @@ void CFilterGroupLogs::mergeTabs()
     for (int i = 0; i <= 100; i += 20) {
         progressBar->setValue(i);
         QCoreApplication::processEvents();
-        QThread::msleep(30);
     }
 
     std::vector<int> mergedProjectionRows;
@@ -442,17 +450,17 @@ void CFilterGroupLogs::mergeTabs()
     std::sort(mergedProjectionRows.begin(), mergedProjectionRows.end());
     mergedProjectionRows.erase(std::unique(mergedProjectionRows.begin(), mergedProjectionRows.end()), mergedProjectionRows.end());
 
-    CProjectionTableModel *projectionModel = new CProjectionTableModel(this);
+    ProjectionTableModel *projectionModel = new ProjectionTableModel(this);
     projectionModel->setSourceModel(m_sourceModelOfDLT);
     projectionModel->setProjectionRows(mergedProjectionRows);
 
     QTableView* mergedView = new QTableView;
-    mergedView->setModel(ecuIdFilterProxy);
+    mergedView->setModel(projectionModel);
     mergedView->horizontalHeader()->setStretchLastSection(true);
     mergedView->setSelectionBehavior(QAbstractItemView::SelectRows);
     mergedView->resizeColumnsToContents();
     auto settings = QDltSettingsManager::getInstance();
-    for (int col = 0; col < ecuIdFilterProxy->columnCount(); ++col) {
+    for (int col = 0; col < projectionModel->columnCount(); ++col) {
         bool show = FieldNames::getColumnShown(static_cast<FieldNames::Fields>(col), settings);
         mergedView->setColumnHidden(col, !show);
     }
@@ -540,10 +548,7 @@ void CFilterGroupLogs::onExportFilteredLogsClicked() {
         QMessageBox::critical(m_mergedTabWidget, "Export Error", "Could not find table view for selected tab.");
         return;
     }
-    IndexRowReferenceModel* proxyModel = qobject_cast<IndexRowReferenceModel*>(tableView->model());
-    if (!proxyModel || !sourceModelOfDLT) {
-        QMessageBox::critical(mergedTabWidget, "Export Error", "Could not access filtering model.");
-    CProjectionTableModel* projectionModel = qobject_cast<CProjectionTableModel*>(tableView->model());
+    ProjectionTableModel* projectionModel = qobject_cast<ProjectionTableModel*>(tableView->model());
     if (!projectionModel || !projectionModel->sourceModel()) {
         QMessageBox::critical(m_mergedTabWidget, "Export Error", "Could not access projection model.");
         return;
@@ -555,13 +560,13 @@ void CFilterGroupLogs::onExportFilteredLogsClicked() {
     progress.show();
     try {
         QModelIndexList selectedIndices;
-        int rowCount = proxyModel->rowCount();
+        int rowCount = projectionModel->rowCount();
         if (rowCount == 0) {
             QMessageBox::information(m_mergedTabWidget, "Export", "No messages to export in selected tab.");
             return;
         }
 
-        // Map proxy model indices back to source model indices
+        // Map projection rows back to source model indices.
         for (int row = 0; row < rowCount; ++row) {
             if (progress.wasCanceled()) {
                 return;
@@ -626,7 +631,6 @@ void CFilterGroupLogs::onExportFilteredLogsClicked() {
             if (currentValue < 90) {
                 progress.setValue(currentValue + 1);
             }
-            QThread::msleep(100);
         }
         progress.setValue(100);
         if (exportResult.isEmpty()) {
@@ -672,44 +676,4 @@ void CFilterGroupLogs::setDltFile(QDltFile* file) {
 void CFilterGroupLogs::setPluginManager(QDltPluginManager* manager) {
     pluginManager = manager;
 }
-
-void filtergrouplogs::onTabWindowDestroyed()
-{
-    mergedTabWidget = nullptr;
-
-    qDeleteAll(ecuTabModels);
-    ecuTabModels.clear();
-
-    mergedTabs.clear();
-    ecuTabViews.clear();
-    tabToSelectedIds.clear();
-    selectedEcuIdSet.clear();
-}
-
-void filtergrouplogs::onSourceModelChanged()
-{
-    if(!mergedTabWidget || mergedTabs.isEmpty())
-    {
-        return;
-    }
-
-    rebuildGroupedIndex();
-
-    for(auto it = mergedTabs.begin(); it != mergedTabs.end(); ++it)
-    {
-        const QString tabName = it.key();
-        QWidget *tabWidget = it.value();
-        const QStringList selectedIds = tabToSelectedIds.value(tabWidget);
-
-        if(selectedIds.isEmpty())
-        {
-            createOrUpdateTab(tabName, ecuRowReferences.value(tabName));
-        }
-        else
-        {
-            createOrUpdateTab(tabName, rowsForEcuSet(QSet<QString>(selectedIds.begin(), selectedIds.end())));
-        }
-    }
-}
-
 

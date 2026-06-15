@@ -485,10 +485,10 @@ void MainWindow::initState()
     m_tableModel->project = &project;
     m_tableModel->pluginManager = &pluginManager;
 
-    /* Bind MessageStore adapter to the active QDltFile */
+    /* Bind m_messageStore adapter to the active QDltFile */
     m_messageStore.setFile(&qfile);
 
-    /* Bind MessageStore adapter to the active QDltFile */
+    /* Bind m_messageStore adapter to the active QDltFile */
     m_messageStore.setFile(&qfile);
 
     /* initialise project configuration */
@@ -823,7 +823,7 @@ void MainWindow::initSearchTable()
     m_searchtableModel->project = &project;
     m_searchtableModel->pluginManager = &pluginManager;
 
-    /* Ensure MessageStore adapter is pointing at the same QDltFile instance */
+    /* Ensure m_messageStore adapter is pointing at the same QDltFile instance */
     m_messageStore.setFile(&qfile);
 
     m_searchDlg->registerSearchTableModel(m_searchtableModel);
@@ -2652,7 +2652,7 @@ void MainWindow::reloadLogFileVersionString(QString ecuId, QString version)
 
 void MainWindow::reloadLogFileFinishIndex()
 {
-    /* Repoint MessageStore adapter to current file after index reload */
+    /* Repoint m_messageStore adapter to current file after index reload */
     m_messageStore.setFile(&qfile);
 
     // show already unfiltered messages
@@ -2712,7 +2712,7 @@ void MainWindow::reloadLogFileFinishFilter()
     // updateIndex, if messages are received in between
     updateIndex();
 
-    /* Rebuild IndexService projection snapshot after filter is applied */
+    /* Rebuild m_indexService projection snapshot after filter is applied */
     m_indexService.snapshotProjection(buildActiveFilteredProjection(&qfile));
 
     /* Invalidate decode cache for stale decoded entries after filter change */
@@ -5201,7 +5201,7 @@ void MainWindow::updateIndex()
             item->updateFileFinish();
         }
 
-        /* Repoint MessageStore to updated file after live index growth */
+        /* Repoint m_messageStore to updated file after live index growth */
         m_messageStore.setFile(&qfile);
     }
 }
@@ -9280,3 +9280,4 @@ void MainWindow::handleExportResults(const QString &)
     activeExporterThread = nullptr;
     statusProgressBar->hide();
 }
+

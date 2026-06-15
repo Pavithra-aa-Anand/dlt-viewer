@@ -1,4 +1,4 @@
-#include <QVBoxLayout>
+﻿#include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QPushButton>
@@ -14,8 +14,11 @@
 #include "crlffilterwindow.h"
 #include "mainwindow.h"
 #include "fieldnames.h"
+#include "indexservice.h"
+#include "qdltfileprojection.h"
 #include "qdltfile.h"
 #include "qdltexporter.h"
+#include "qdltoptmanager.h"
 #include "qdltsettingsmanager.h"
 
 CrlfFilterWindow::CrlfFilterWindow(QObject* parent) : QObject(parent) {
@@ -30,10 +33,11 @@ CrlfFilterWindow::CrlfFilterWindow(QObject* parent) : QObject(parent) {
     m_indexService = nullptr;
     m_externalDecodeCacheService = nullptr;
     
-    rebuildTimer = new QTimer(this);
-    rebuildTimer->setSingleShot(true);
-    rebuildTimer->setInterval(500);
-    connect(rebuildTimer, &QTimer::timeout, this, &CrlfFilterWindow::onRebuildTimerTimeout);
+    // Initialize debouncing mechanism
+    m_rebuildTimer = new QTimer(this);
+    m_rebuildTimer->setSingleShot(true);
+    m_rebuildTimer->setInterval(500);
+    connect(m_rebuildTimer, &QTimer::timeout, this, &CrlfFilterWindow::onRebuildTimerTimeout);
     
     m_lastFilteredMessageCount = -1;
     m_rebuildScheduled = false;
@@ -61,27 +65,27 @@ bool CrlfFilterWindow::containsCrlf(const QString& payload) {
 // Update window title and status label with message count
 void CrlfFilterWindow::updateMessageCount(int count) {
     QString countText = QString("CRLF Messages (%1 found)").arg(count);
-    if (crlfWindow) {
-        crlfWindow->setWindowTitle(countText);
+    if (m_crlfWindow) {
+        m_crlfWindow->setWindowTitle(countText);
     }
-    if (statusLabel) {
-        statusLabel->setText(QString("Total CRLF messages: %1 ").arg(count));
+    if (m_statusLabel) {
+        m_statusLabel->setText(QString("Total CRLF messages: %1 ").arg(count));
     }
 }
 
 // Apply column settings to table view
 void CrlfFilterWindow::applyColumnSettings() {
-    if (!crlfTableView || !crlfFilterProxy) {
+    if (!m_crlfTableView || !m_crlfProjectionModel) {
         return;
     }
     
     auto settings = QDltSettingsManager::getInstance();
-    for (int col = 0; col < crlfFilterProxy->columnCount(); ++col) {
+    for (int col = 0; col < m_crlfProjectionModel->columnCount(); ++col) {
         bool show = FieldNames::getColumnShown(static_cast<FieldNames::Fields>(col), settings);
-        crlfTableView->setColumnHidden(col, !show);
+        m_crlfTableView->setColumnHidden(col, !show);
         if (show) {
             int width = FieldNames::getColumnWidth(static_cast<FieldNames::Fields>(col), settings);
-            crlfTableView->setColumnWidth(col, width);
+            m_crlfTableView->setColumnWidth(col, width);
         }
     }
 }
@@ -99,9 +103,10 @@ void CrlfFilterWindow::createCrlfWindow() {
         return;
     }
     
-    if (crlfWindow && crlfWindow->isVisible()) {
-        crlfWindow->raise();
-        crlfWindow->activateWindow();
+    // Check if a CRLF window is already open (prevent multiple instances)
+    if (m_crlfWindow && m_crlfWindow->isVisible()) {
+        m_crlfWindow->raise();
+        m_crlfWindow->activateWindow();
         return;
     }
 
@@ -109,7 +114,7 @@ void CrlfFilterWindow::createCrlfWindow() {
     
     // Create the model if it doesn't exist
     if (!m_crlfProjectionModel) {
-        m_crlfProjectionModel = new CProjectionTableModel(this);
+        m_crlfProjectionModel = new ProjectionTableModel(this);
     }
     m_crlfProjectionModel->setSourceModel(m_sourceModelOfDLT);
     
@@ -119,24 +124,36 @@ void CrlfFilterWindow::createCrlfWindow() {
         QMessageBox::information(parentWidget, "No Messages", "No messages are available for CRLF filtering.");
         return;
     }
-
-    if(crlfFilterProxy->rowCount() == 0)
-    {
+    
+    bool cancelled = false;
+    const std::vector<int> projectionRows = buildCrlfProjectionRows(parentWidget, "Preparing CRLF data...", &cancelled);
+    if (cancelled) {
+        m_crlfProjectionModel->clearProjection();
+        return;
+    }
+    m_crlfProjectionModel->setProjectionRows(projectionRows);
+    const int addedCount = static_cast<int>(projectionRows.size());
+    
+    // Check if any CRLF messages were found
+    if (addedCount == 0) {
         QMessageBox::information(parentWidget, "No CRLF Messages", 
             "No messages containing CRLF characters (\\r, \\n, or \\r\\n) were found in the current DLT file.");
         return;
     }
 
-    crlfWindow = new QWidget(parentWidget);
-    crlfWindow->setAttribute(Qt::WA_DeleteOnClose);
-    crlfWindow->resize(1200, 700);
+    // Data preparation successful, now create and show the window
+    m_crlfWindow = new QWidget(parentWidget);
+    m_crlfWindow->setAttribute(Qt::WA_DeleteOnClose);
+    m_crlfWindow->resize(1200, 700);
     
-    connect(crlfWindow, &QWidget::destroyed, this, &CrlfFilterWindow::cleanup);
-    connect(crlfWindow, &QWidget::destroyed, this, &QObject::deleteLater);
+    // Connect window close event to cleanup
+    connect(m_crlfWindow, &QWidget::destroyed, this, &CrlfFilterWindow::cleanup);
+    connect(m_crlfWindow, &QWidget::destroyed, this, &QObject::deleteLater);
     
-    crlfWindow->setWindowFlags(Qt::Window);
+    m_crlfWindow->setWindowFlags(Qt::Window);
     
-    QVBoxLayout* layout = new QVBoxLayout(crlfWindow);
+    // Create layout and UI components
+    QVBoxLayout* layout = new QVBoxLayout(m_crlfWindow);
 
     QToolBar* toolbar = new QToolBar;
     QHBoxLayout* topRowLayout = new QHBoxLayout();
@@ -149,31 +166,34 @@ void CrlfFilterWindow::createCrlfWindow() {
     toolbar->addWidget(exportButton);
     connect(exportButton, &QPushButton::clicked, this, &CrlfFilterWindow::onExportFilteredCrlfLogsClicked);
 
-    crlfTableView = new QTableView;
-    crlfTableView->setModel(crlfFilterProxy);
-    crlfTableView->setSelectionBehavior(QAbstractItemView::SelectRows);
-    crlfTableView->setAlternatingRowColors(true);
-    crlfTableView->verticalHeader()->setVisible(false);
-    crlfTableView->setSortingEnabled(false);
-    crlfTableView->horizontalHeader()->setSortIndicatorShown(false);
-    crlfTableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
-    crlfTableView->horizontalHeader()->setStretchLastSection(true); // Enable stretching for better payload display
-    crlfTableView->setWordWrap(false); // Disable word wrap but allow horizontal scrolling
+    // Create table view with the already prepared model
+    m_crlfTableView = new QTableView;
+    m_crlfTableView->setModel(m_crlfProjectionModel);
+    m_crlfTableView->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_crlfTableView->setAlternatingRowColors(true);
+    m_crlfTableView->verticalHeader()->setVisible(false);
+    m_crlfTableView->setSortingEnabled(false);
+    m_crlfTableView->horizontalHeader()->setSortIndicatorShown(false);
+    m_crlfTableView->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    m_crlfTableView->horizontalHeader()->setStretchLastSection(true); // Enable stretching for better payload display
+    m_crlfTableView->setWordWrap(false); // Disable word wrap but allow horizontal scrolling
+    // Apply column settings like main window
     applyColumnSettings();
     
-    connect(crlfTableView, &QTableView::doubleClicked, this, &CrlfFilterWindow::onCrlfMessageDoubleClicked);
-    layout->addWidget(crlfTableView);
+    connect(m_crlfTableView, &QTableView::doubleClicked, this, &CrlfFilterWindow::onCrlfMessageDoubleClicked);
+    layout->addWidget(m_crlfTableView);
       
-    statusLabel = new QLabel();
+    // Add status bar
+    m_statusLabel = new QLabel();
     
     // Apply theme-appropriate styling
-    QPalette palette = statusLabel->palette();
+    QPalette palette = m_statusLabel->palette();
     bool isDarkMode = palette.color(QPalette::Window).lightness() < palette.color(QPalette::WindowText).lightness();
-    statusLabel->setStyleSheet(isDarkMode ? 
+    m_statusLabel->setStyleSheet(isDarkMode ? 
         "QLabel { padding: 5px; background-color: #3c3c3c; border-top: 1px solid #555; color: #ffffff; }" :
         "QLabel { padding: 5px; background-color: #f0f0f0; border-top: 1px solid #ccc; color: #000000; }");
     
-    layout->addWidget(statusLabel);
+    layout->addWidget(m_statusLabel);
 
     // Update window title and status with message count
     updateMessageCount(m_crlfProjectionModel->rowCount());
@@ -182,9 +202,10 @@ void CrlfFilterWindow::createCrlfWindow() {
     applyColumnSettings();
     m_lastFilteredMessageCount = m_dltFile->sizeFilter();
 
-    crlfWindow->show();
-    crlfWindow->raise();
-    crlfWindow->activateWindow();
+    // Show window after everything is prepared
+    m_crlfWindow->show();
+    m_crlfWindow->raise();
+    m_crlfWindow->activateWindow();
 }
 
 // Exports all filtered CRLF DLT logs to a file
@@ -194,37 +215,31 @@ void CrlfFilterWindow::onExportFilteredCrlfLogsClicked() {
         return;
     }
     
-    int rowCount = crlfFilterProxy->rowCount();
+    int rowCount = m_crlfProjectionModel->rowCount();
     if (rowCount == 0) {
-        QMessageBox::information(crlfWindow, "Export", "No CRLF messages to export.");
+        QMessageBox::information(m_crlfWindow, "Export", "No CRLF messages to export.");
         return;
     }
     
-    QString fileName = QFileDialog::getSaveFileName(crlfWindow, "Export CRLF Messages", 
+    QString fileName = QFileDialog::getSaveFileName(m_crlfWindow, "Export CRLF Messages", 
                                                     "crlf_messages.dlt", 
                                                     "DLT Files (*.dlt);;All Files (*)");
     if (fileName.isEmpty()) {
         return;
     }
 
-    QProgressDialog* progress = nullptr;
-    bool showExportProgress = !isMainWindowBusy();
-    
-    if (showExportProgress) {
-        progress = new QProgressDialog("Exporting CRLF messages...", "Cancel", 0, rowCount, crlfWindow);
-        progress->setWindowModality(Qt::WindowModal);
-        progress->setMinimumDuration(0);  // Show immediately
-        progress->setValue(0);  // Initialize progress value
-        progress->show();
-        QCoreApplication::processEvents();  // Force progress dialog to appear
-    }
+    QProgressDialog progress("Exporting CRLF messages...", "Cancel", 0, rowCount, m_crlfWindow);
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(0);
+    progress.show();
 
     try {
         QModelIndexList selectedIndices;
         selectedIndices.reserve(rowCount);
 
+        // Map projection rows back to source model rows for export.
         for (int row = 0; row < rowCount; ++row) {
-            if (progress && progress->wasCanceled()) {
+            if (progress.wasCanceled()) {
                 return;
             }
 
@@ -233,27 +248,27 @@ void CrlfFilterWindow::onExportFilteredCrlfLogsClicked() {
             if (sourceIndex.isValid()) {
                 selectedIndices.append(sourceIndex);
             }
-
-            if (progress && (row % 5 == 0 || row == rowCount - 1)) {
-                progress->setValue(row + 1);
-                progress->setLabelText(QString("Processing message %1 of %2...").arg(row + 1).arg(rowCount));
+            
+            // Update progress more frequently to ensure visibility
+            if (row % 5 == 0 || row == rowCount - 1) {
+                progress.setValue(row + 1);
+                progress.setLabelText(QString("Processing message %1 of %2...").arg(row + 1).arg(rowCount));
                 QCoreApplication::processEvents();
             }
         }
-
+        
         if (selectedIndices.isEmpty()) {
-            if (progress) {
-                progress->close();
-                delete progress;
-            }
-            QMessageBox::warning(crlfWindow, "Export Error", "No valid CRLF messages found to export.");
+            progress.close();
+            QMessageBox::warning(m_crlfWindow, "Export Error", "No valid CRLF messages found to export.");
             return;
         }
 
-        if (progress) {
-            progress->setLabelText("Creating DLT file...");
-            progress->setRange(0, 0);  // Indeterminate progress for file export
-        }
+        const int foundMessages = selectedIndices.size();
+        const QString exportMessage = QString("Found %1 CRLF messages in current view").arg(foundMessages);
+        
+        // Create and configure the exporter with proper DLT format support
+        progress.setLabelText("Creating DLT file...");
+        progress.setRange(0, 0);  // Indeterminate progress for file export
         QCoreApplication::processEvents();
 
         QDltExporter* exporter = new QDltExporter(
@@ -274,28 +289,17 @@ void CrlfFilterWindow::onExportFilteredCrlfLogsClicked() {
         exporter->exportMessages();
         delete exporter;
 
-        if (progress) {
-            progress->setLabelText("Export completed successfully!");
-            QCoreApplication::processEvents();
-            progress->close();
-            delete progress;
-        }
-        QMessageBox::information(crlfWindow, "Export Complete", 
-                               QString("Successfully exported %1 CRLF messages to %2")
-                               .arg(selectedIndices.size()).arg(fileName));
+        progress.close();
+        QMessageBox::information(m_crlfWindow, "Export Complete", 
+                               QString("Successfully exported %1 CRLF messages to %2\n\n%3")
+                               .arg(foundMessages).arg(fileName).arg(exportMessage));
 
     } catch (const std::exception &e) {
-        if (progress) {
-            progress->close();
-            delete progress;
-        }
-        QMessageBox::critical(crlfWindow, "Export Error", QString("Failed to export: %1").arg(e.what()));
+        progress.close();
+        QMessageBox::critical(m_crlfWindow, "Export Error", QString("Failed to export: %1").arg(e.what()));
     } catch (...) {
-        if (progress) {
-            progress->close();
-            delete progress;
-        }
-        QMessageBox::critical(crlfWindow, "Export Error", "An unexpected error occurred during export.");
+        progress.close();
+        QMessageBox::critical(m_crlfWindow, "Export Error", "An unexpected error occurred during export.");
     }
 }
 
@@ -333,9 +337,9 @@ void CrlfFilterWindow::setDltFile(QDltFile* file) {
     if (m_crlfWindow && m_crlfWindow->isVisible() && m_dltFile) {
         if (m_dltFile->size() == 0) {
             onSourceModelReset();
-        } else if (!rebuildScheduled && !rebuildTimer->isActive() && !rebuildInProgress) {
-            rebuildScheduled = true;
-            rebuildTimer->start();
+        } else if (!m_rebuildScheduled && !m_rebuildTimer->isActive() && !m_rebuildInProgress) {
+            m_rebuildScheduled = true;
+            m_rebuildTimer->start();
         }
     }
 }
@@ -362,12 +366,13 @@ void CrlfFilterWindow::setDecodeCacheService(CDecodeCacheService *decodeCacheSer
 
 // Cleanup method to properly disconnect from models/signals
 void CrlfFilterWindow::cleanup() {
-    rebuildScheduled = false;
-    rebuildInProgress = false;
-    lastBuildCanceled = false;
+    // Reset state flags first to prevent any new operations
+    m_rebuildScheduled = false;
+    m_rebuildInProgress = false;
     
-    if (rebuildTimer && rebuildTimer->isActive()) {
-        rebuildTimer->stop();
+    // Stop any pending rebuild operations
+    if (m_rebuildTimer && m_rebuildTimer->isActive()) {
+        m_rebuildTimer->stop();
     }
     
     // Disconnect from source model to prevent further updates
@@ -375,12 +380,14 @@ void CrlfFilterWindow::cleanup() {
         disconnect(m_sourceModelOfDLT, nullptr, this, nullptr);
     }
     
-    if (crlfTableView && crlfFilterProxy) {
-        crlfTableView->setModel(nullptr);
+    // Clean up UI components - only detach model if both objects exist
+    if (m_crlfTableView && m_crlfProjectionModel) {
+        m_crlfTableView->setModel(nullptr);
     }
     
-    if (crlfFilterProxy) {
-        crlfFilterProxy->deleteLater();
+    // Schedule proxy model for deletion
+    if (m_crlfProjectionModel) {
+        m_crlfProjectionModel->deleteLater();
     }
     
     // Reset all pointers (no individual null checks needed)
@@ -398,10 +405,9 @@ void CrlfFilterWindow::onCrlfMessageDoubleClicked(const QModelIndex& index) {
     if (!index.isValid() || !m_crlfProjectionModel || !m_dltFile) {
         return;
     }
-    
-    const int sourceRow = crlfFilterProxy->sourceRowAt(index.row());
-    if(sourceRow < 0 || !dltFile)
-    {
+
+    const int sourceRow = m_crlfProjectionModel->sourceRowForRow(index.row());
+    if (sourceRow < 0) {
         return;
     }
 
@@ -419,7 +425,7 @@ void CrlfFilterWindow::onCrlfMessageDoubleClicked(const QModelIndex& index) {
         return;
     }
 
-    emit jumpToMessageRequested(absolutePosition);
+    emit jumpToMessageRequested(actualPosition);
 
     if (QWidget* parentWidget = qobject_cast<QWidget*>(parent())) {
         parentWidget->raise();
@@ -446,56 +452,75 @@ void CrlfFilterWindow::onSourceModelDataChanged() {
     }
     
     // Check for significant data changes that require cache invalidation
-    int significantChange = abs(currentFilteredCount - lastFilteredMessageCount);
+    int significantChange = abs(currentFilteredCount - m_lastFilteredMessageCount);
     
     // For filter changes, always invalidate cache since different messages may be visible even if the count is similar
-    if (lastFilteredMessageCount > 0 && significantChange > 0) {
+    if (m_lastFilteredMessageCount > 0 && significantChange > 0) {
         // Any change in filtered count means different messages are visible - invalidate cache
         this->invalidateCache();
     }
-    bool countChanged = (currentFilteredCount != lastFilteredMessageCount);
     
     // Additional validation: During model transitions, delay rebuild for stability
     if (m_sourceModelOfDLT && m_sourceModelOfDLT->rowCount() != currentFilteredCount) {
         // Model is in transition - schedule rebuild with delay for stability
-        if (!rebuildScheduled && !rebuildTimer->isActive() && !rebuildInProgress) {
-            rebuildScheduled = true;
-            rebuildTimer->setInterval(750);
-            rebuildTimer->start();
+        if (!m_rebuildScheduled && !m_rebuildTimer->isActive() && !m_rebuildInProgress) {
+            m_rebuildScheduled = true;
+            m_rebuildTimer->setInterval(750); // Longer delay for stability during transitions
+            m_rebuildTimer->start();
         }
         return;
     }
-
-    rebuildTimer->setInterval(500);
-
-    if (!rebuildScheduled && !rebuildTimer->isActive() && !rebuildInProgress) {
-        rebuildScheduled = true;
-        rebuildTimer->start();
+    
+    // Reset normal timer interval
+    m_rebuildTimer->setInterval(500);
+    
+    // Even if the filtered count is unchanged, visible content may differ
+    // (for example, filter criteria changed but cardinality stayed constant).
+    // Rebuild to prevent stale CRLF rows.
+    const bool countChanged = (currentFilteredCount != m_lastFilteredMessageCount);
+    if (!countChanged) {
+        this->invalidateCache();
     }
+    
+    // Avoid overlapping rebuild operations
+    if (m_rebuildScheduled || m_rebuildTimer->isActive() || m_rebuildInProgress) {
+        return;
+    }
+    
+    // Schedule rebuild for both count changes and same-count content changes.
+    m_rebuildScheduled = true;
+    m_rebuildTimer->start();
 }
 
 // Handle when source model is reset/cleared
 void CrlfFilterWindow::onSourceModelReset() {
-    if (rebuildTimer->isActive()) {
-        rebuildTimer->stop();
+    // Reset all state flags and counters
+    if (m_rebuildTimer->isActive()) {
+        m_rebuildTimer->stop();
     }
-    rebuildScheduled = false;
-    rebuildInProgress = false;
-    lastFilteredMessageCount = -1;
-
-    if (!crlfWindow || !crlfWindow->isVisible() || !crlfFilterProxy) {
+    m_rebuildScheduled = false;
+    m_rebuildInProgress = false;
+    m_lastFilteredMessageCount = -1;
+    
+    // Invalidate cache on model reset
+    this->invalidateCache();
+    
+    // Early return if window not visible or proxy not available
+    if (!m_crlfWindow || !m_crlfWindow->isVisible() || !m_crlfProjectionModel) {
         return;
     }
     
     // Don't show empty window during transitions - schedule rebuild instead
     if (m_dltFile && m_dltFile->sizeFilter() > 0) {
         // Schedule rebuild rather than showing empty window
-        rebuildScheduled = true;
-        rebuildTimer->start();
+        m_rebuildScheduled = true;
+        m_rebuildTimer->start();
     } else {
-        crlfFilterProxy->setRowReferences(QVector<int>());
-
-        if (crlfTableView) {
+        // Only clear if there's genuinely no data
+        m_crlfProjectionModel->clearProjection();
+        
+        // Apply settings and update UI
+        if (m_crlfTableView) {
             applyColumnSettings();
         }
         updateMessageCount(0);
@@ -504,115 +529,65 @@ void CrlfFilterWindow::onSourceModelReset() {
 
 // Rebuild the CRLF data model with current DLT file data
 void CrlfFilterWindow::rebuildCrlfModel() {
-    if (!crlfFilterProxy) {
+    if (!m_crlfProjectionModel) {
         return;
     }
     
     if (!m_dltFile || m_dltFile->size() == 0) {
         // No file or empty file - clear the model
-        crlfFilterProxy->removeRows(0, crlfFilterProxy->rowCount());
+        m_crlfProjectionModel->clearProjection();
         updateMessageCount(0);
         return;
     }
-    
-    // Clear existing data
-    crlfFilterProxy->removeRows(0, crlfFilterProxy->rowCount());
     
     // Check if no filtered messages exist
     int totalFilteredMessages = m_dltFile->sizeFilter();
     if (totalFilteredMessages == 0) {
         crlfFilterProxy->setRowReferences(QVector<int>());
         updateMessageCount(0);
-        lastFilteredMessageCount = 0;
+        m_lastFilteredMessageCount = 0;
+        return;
+    }
+    
+    bool cancelled = false;
+    const std::vector<int> projectionRows = buildCrlfProjectionRows(m_crlfWindow, "Rebuilding CRLF data...", &cancelled);
+    if (cancelled) {
+        m_crlfProjectionModel->clearProjection();
+        updateMessageCount(0);
+        m_lastFilteredMessageCount = totalFilteredMessages;
         return;
     }
 
-    const int rowsToProcess = qMin(totalFilteredMessages, sourceModelOfDLT ? sourceModelOfDLT->rowCount() : 0);
-
-    QVector<int> crlfRows;
-    crlfRows.reserve(qMax(1, rowsToProcess / 10));
-
-    bool needsProgress = (totalFilteredMessages > 2000) && !isMainWindowBusy();
-
-    QProgressDialog* buildProgress = nullptr;
-    if (needsProgress) {
-        buildProgress = new QProgressDialog("Rebuilding CRLF data...", "Cancel", 0, totalFilteredMessages, crlfWindow);
-        buildProgress->setWindowModality(Qt::WindowModal);
-        buildProgress->setMinimumDuration(0);
-        buildProgress->show();
-    }
-
-    int processCount = 0;
-    for (int i = 0; i < rowsToProcess; i++) {
-        if (buildProgress && buildProgress->wasCanceled()) {
-            lastBuildCanceled = true;
-            crlfFilterProxy->setRowReferences(QVector<int>());
-            buildProgress->close();
-            delete buildProgress;
-            lastFilteredMessageCount = totalFilteredMessages;
-            return;
-        }
-
-        if(dltFile)
-        {
-            const int absoluteRow = dltFile->getMsgFilterPos(i);
-            if(absoluteRow >= 0 && absoluteRow < dltFile->size())
-            {
-                QDltMsg msg;
-                if(dltFile->getMsg(absoluteRow, msg))
-                {
-                    msg.setIndex(absoluteRow);
-                    if(pluginManager &&
-                       QDltSettingsManager::getInstance()->value("startup/pluginsEnabled", true).toBool())
-                    {
-                        pluginManager->decodeMsg(msg, false);
-                    }
-
-                    const QString decodedPayload = msg.toStringPayload();
-                    if(containsCrlf(decodedPayload))
-                    {
-                        crlfRows.append(i);
-                    }
-                }
-            }
-        }
-
-        processCount++;
-        if (buildProgress && processCount % 200 == 0) {
-            buildProgress->setValue(i);
-            QCoreApplication::processEvents();
-        }
-    }
-
-    if (buildProgress) {
-        buildProgress->close();
-        delete buildProgress;
-    }
-
-    crlfFilterProxy->setRowReferences(crlfRows);
-
-    updateMessageCount(crlfRows.size());
-    lastFilteredMessageCount = totalFilteredMessages;
-
+    m_crlfProjectionModel->setProjectionRows(projectionRows);
+    const int addedCount = static_cast<int>(projectionRows.size());
+    
+    // Update UI with final count
+    updateMessageCount(addedCount);
+    m_lastFilteredMessageCount = totalFilteredMessages;
+    
+    // Apply column settings
     applyColumnSettings();
 }
 
 // Debounced rebuild triggered by timer
 void CrlfFilterWindow::onRebuildTimerTimeout() {
-    rebuildScheduled = false;
+    m_rebuildScheduled = false;
     
-    if (!crlfWindow || !crlfWindow->isVisible()) {
+    if (!m_crlfWindow || !m_crlfWindow->isVisible()) {
         return;
     }
     
-    if (rebuildInProgress) {
+    // Prevent overlapping rebuilds
+    if (m_rebuildInProgress) {
         return;
     }
     
     if (!m_dltFile || m_dltFile->size() == 0) {
         onSourceModelReset();
     } else {
+        m_rebuildInProgress = true;
         rebuildCrlfModel();
+        m_rebuildInProgress = false;
     }
 }
 
@@ -629,19 +604,17 @@ void CrlfFilterWindow::refreshWindow() {
 
 // Public method to show and activate the CRLF window
 void CrlfFilterWindow::showAndActivate() {
-    if (crlfWindow) {
-        crlfWindow->activateWindow();
-        crlfWindow->raise();
-        crlfWindow->show();
-    } else if (dltFile) {
-        createCrlfWindow();
+    if (m_crlfWindow) {
+        m_crlfWindow->activateWindow();
+        m_crlfWindow->raise();
+        m_crlfWindow->show();
     }
 }
 
 // Public method to close the CRLF window
 void CrlfFilterWindow::closeWindow() {
-    if (crlfWindow) {
-        crlfWindow->close();
+    if (m_crlfWindow) {
+        m_crlfWindow->close();
     }
 }
 
@@ -699,78 +672,20 @@ std::vector<int> CrlfFilterWindow::buildCrlfProjectionRows(QWidget *progressPare
             const MessageId messageId = m_messageStore->messageIdForGlobalIndex(globalIndex);
             gotMessage = (messageId != kInvalidMessageId) && m_messageStore->message(messageId, msg);
         }
-        }
-    }
-    
-    return data;
-}
 
-// Clear cache when file structure changes
-void CrlfFilterWindow::invalidateCache() {
-    crlfCache.clear();
-    messageDataCache.clear();
-    bulkCrlfIndexBuilt = false;
-    lastCacheValidCount = -1;
-}
+        if (!gotMessage)
+            continue;
 
-// Build bulk CRLF index for all messages (one-time operation)
-void CrlfFilterWindow::buildBulkCrlfIndex() {
-    if (bulkCrlfIndexBuilt || !dltFile) {
-        return;
-    }
-    
-    crlfCache.clear();  // Clear existing cache before rebuilding
-    int totalMessages = dltFile->sizeFilter();
-    
-    // Only show progress for large files
-    QProgressDialog* progress = nullptr;
-    if (totalMessages > 1000 && !isMainWindowBusy()) {
-        QWidget* parentWidget = qobject_cast<QWidget*>(parent());
-        progress = new QProgressDialog("Building CRLF index...", "Cancel", 0, totalMessages, parentWidget);
-        progress->setWindowModality(Qt::ApplicationModal);
-        progress->setMinimumDuration(0);
-        progress->show();
-    }
-    
-    // Process messages in chunks to reduce UI blocking
-    const int chunkSize = 100;
-    
-    for (int i = 0; i < totalMessages; i += chunkSize) {
-        if (progress && progress->wasCanceled()) {
-            delete progress;
-            return;
-        }
-        
-        int endIndex = qMin(i + chunkSize, totalMessages);
-        
-        for (int j = i; j < endIndex; j++) {
-            int actualPos = dltFile->getMsgFilterPos(j);
-            if (actualPos >= 0 && actualPos < dltFile->size()) {
-                QDltMsg msg;
-                if (dltFile->getMsg(actualPos, msg)) {
-                    if (pluginManager) {
-                        pluginManager->decodeMsg(msg, true);
-                    }
-                    QString rawPayload = msg.toStringPayload();
-                    if (containsCrlf(rawPayload)) {
-                        crlfCache[actualPos] = true;   // Positive cache entry
-                    } else {
-                        crlfCache[actualPos] = false;  // Negative cache entry
-                    }
-                }
-            }
-        }
-        
-        if (progress) {
-            progress->setValue(endIndex);
+        if (containsCrlf(msg.toStringPayload()))
+            rows.push_back(sourceRow);
+
+        if ((sourceRow % 100) == 0) {
+            buildProgress.setValue(sourceRow);
             QCoreApplication::processEvents();
         }
     }
-    
-    if (progress) {
-        progress->close();
-        delete progress;
-    }
-    
-    bulkCrlfIndexBuilt = true;
+
+    buildProgress.setValue(totalFilteredMessages);
+    buildProgress.close();
+    return rows;
 }
