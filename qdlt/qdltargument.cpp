@@ -171,11 +171,11 @@ bool QDltArgument::setArgument(QByteArray &payload,unsigned int &offset, QDlt::D
                 length3 = DLT_SWAP_16((*((unsigned short*) (payload.constData()+offset))));
             offset += sizeof(unsigned short);
         }
-        name = QString(payload.mid(offset,length2));
+        name = QString::fromUtf8(payload.constData() + offset, length2);
         offset += length2;
         if(typeInfo == DltTypeInfoSInt || typeInfo == DltTypeInfoUInt || typeInfo == DltTypeInfoFloa)
         {
-            unit = QString(payload.mid(offset,length3));
+            unit = QString::fromUtf8(payload.constData() + offset, length3);
             offset += length3;
         }
     }
@@ -192,12 +192,12 @@ bool QDltArgument::setArgument(QByteArray &payload,unsigned int &offset, QDlt::D
     {
         if((unsigned int)payload.size()<(offset+length))
             return false;
-        data = payload.mid(offset,length);
+        data = payload.mid(offset, static_cast<int>(length));
         offset += length;
     }
     else if(typeInfo == DltTypeInfoBool)
     {
-        data = payload.mid(offset,1);
+        data = payload.mid(offset, 1);
         offset += 1;
     }
     else if(typeInfo == DltTypeInfoSInt || typeInfo == DltTypeInfoUInt)
@@ -206,31 +206,31 @@ bool QDltArgument::setArgument(QByteArray &payload,unsigned int &offset, QDlt::D
         {
             case DLT_TYLE_8BIT:
             {
-                data = payload.mid(offset,1);
+                data = payload.mid(offset, 1);
                 offset += 1;
                 break;
             }
             case DLT_TYLE_16BIT:
             {
-                data = payload.mid(offset,2);
+                data = payload.mid(offset, 2);
                 offset += 2;
                 break;
             }
             case DLT_TYLE_32BIT:
             {
-                data = payload.mid(offset,4);
+                data = payload.mid(offset, 4);
                 offset += 4;
                 break;
             }
             case DLT_TYLE_64BIT:
             {
-                data = payload.mid(offset,8);
+                data = payload.mid(offset, 8);
                 offset += 8;
                 break;
             }
             case DLT_TYLE_128BIT:
             {
-                data = payload.mid(offset,16);
+                data = payload.mid(offset, 16);
                 offset += 16;
                 break;
             }
@@ -247,31 +247,31 @@ bool QDltArgument::setArgument(QByteArray &payload,unsigned int &offset, QDlt::D
         {
             case DLT_TYLE_8BIT:
             {
-                data = payload.mid(offset,1);
+                data = payload.mid(offset, 1);
                 offset += 1;
                 break;
             }
             case DLT_TYLE_16BIT:
              {
-                data = payload.mid(offset,2);
+                data = payload.mid(offset, 2);
                 offset += 2;
                 break;
             }
             case DLT_TYLE_32BIT:
             {
-                data = payload.mid(offset,4);
+                data = payload.mid(offset, 4);
                 offset += 4;
                 break;
             }
             case DLT_TYLE_64BIT:
             {
-                data = payload.mid(offset,8);
+                data = payload.mid(offset, 8);
                 offset += 8;
                 break;
             }
             case DLT_TYLE_128BIT:
             {
-                data = payload.mid(offset,16);
+                data = payload.mid(offset, 16);
                 offset += 16;
                 break;
             }
