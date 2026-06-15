@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @licence app begin@
  * Copyright (C) 2011-2012  BMW AG
  *
@@ -166,13 +166,13 @@ private:
     unsigned long totalSyncFoundRcvd;
 
     /* Search */
-    SearchDialog *searchDlg;
+    CSearchDialog *m_searchDlg;
     QShortcut *m_shortcut_searchnext;
     QShortcut *m_shortcut_searchprev;
     SearchForm* searchInput;
 
     /* CRLF Filter Window */
-    CrlfFilterWindow *crlfFilterWindow;
+    CrlfFilterWindow *m_crlfFilterWindow;
 
     /* Shortcuts */
     QShortcut *copyPayloadShortcut;
