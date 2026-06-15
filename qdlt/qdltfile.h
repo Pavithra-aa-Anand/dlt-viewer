@@ -479,7 +479,7 @@ private:
       true dltv2 support is enabled.
       false dltv2 support is disabled.
     */
-    bool dltv2Support;
+    bool dltv2Support = false;
 };
 
 

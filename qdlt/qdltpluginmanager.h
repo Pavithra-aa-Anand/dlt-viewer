@@ -24,6 +24,13 @@ public:
     QDltPluginManager() = default;
     ~QDltPluginManager();
 
+  enum class PluginStage
+  {
+    Ingest,
+    Decode,
+    Enrich
+  };
+
     //! The number of plugins
     /*!
       \return the number of loaded plugins.
@@ -64,6 +71,9 @@ public:
     //! and are not safe to call concurrently from multiple threads.
     void decodeMsgUsingPlugins(const QList<QDltPlugin*> &pluginsSnapshot, QDltMsg &msg, int triggeredByUser) const;
 
+    //! Decode message through enabled decoder plugins and report if handled.
+    bool decodeMsgHandled(QDltMsg &msg, int triggeredByUser);
+
     //! Get the list of pointers to all loaded plugins
     QList<QDltPlugin*> getPlugins() const { return plugins; }
 
@@ -95,6 +105,7 @@ public:
 
 private:
     mutable QMutex pluginListMutex;
+    mutable QMutex m_decodeStageMutex;
 
     //! Serializes the actual plugin->decodeMsg() invocation across every entry point
     //! (decodeMsg(), decodeMsgTry(), decodeMsgUsingPlugins()), since plugin instances
