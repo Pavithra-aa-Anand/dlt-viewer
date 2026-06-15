@@ -156,12 +156,18 @@ public:
     */
     bool getMsg(int index,QDltMsg &msg);
 
+    //! Service-oriented alias for loading a decoded message at a global index.
+    bool messageAt(int index, QDltMsg &msg) const;
+
     //! Get one DLT message of the DLT log file selected by index
     /*!
       \param index position of the DLT message in the log file up to the number DLT messages in the file
       \return Byte array containing the complete DLT message.
     */
     QByteArray getMsg(int index) const;
+
+    //! Service-oriented alias for loading serialized message bytes at a global index.
+    QByteArray messageBytesAt(int index) const;
 
     //! Get one DLT message of the filtered DLT log file selected by index
     /*!
@@ -176,6 +182,9 @@ public:
       \return real position in log file, -1 if invalid.
     */
     int getMsgFilterPos(int index) const;
+
+    //! Service-oriented alias for resolving a filtered row to the global message index.
+    int filteredGlobalIndexAt(int index) const;
 
     //! Delete all filters and markers.
     /*!

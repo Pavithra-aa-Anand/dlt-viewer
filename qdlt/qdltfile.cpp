@@ -765,6 +765,17 @@ bool QDltFile::getMsg(int index,QDltMsg &msg)
     return result;
 }
 
+bool QDltFile::messageAt(int index, QDltMsg &msg) const
+{
+    // getMsg updates internal cache state, so route through a const_cast wrapper.
+    return const_cast<QDltFile*>(this)->getMsg(index, msg);
+}
+
+QByteArray QDltFile::messageBytesAt(int index) const
+{
+    return getMsg(index);
+}
+
 QByteArray QDltFile::getMsgFilter(int index) const
 {
     if(filterFlag)
@@ -818,6 +829,11 @@ int QDltFile::getMsgFilterPos(int index) const
         }
         return index;
     }
+}
+
+int QDltFile::filteredGlobalIndexAt(int index) const
+{
+    return getMsgFilterPos(index);
 }
 
 void QDltFile::clearFilter()
