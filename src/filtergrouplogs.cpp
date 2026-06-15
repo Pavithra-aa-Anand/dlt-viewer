@@ -1,4 +1,4 @@
-#include <QListWidget>
+﻿#include <QListWidget>
 #include <QBoxLayout>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -13,22 +13,69 @@
 #include <QProgressBar>
 #include <QThread>
 
+#include <algorithm>
+
 #include "filtergrouplogs.h"
 #include "fieldnames.h"
+#include "indexservice.h"
+#include "qdltfileprojection.h"
 #include "qdltfile.h"
 #include "qdltexporter.h"
 #include "qdltsettingsmanager.h"
 
 filtergrouplogs::filtergrouplogs(QObject* parent) : QObject(parent) {
     sourceModelOfDLT = nullptr;
-    ecuIdFilterProxy = nullptr;
     mergedTabWidget = nullptr;
     dltFile = nullptr;
     pluginManager = nullptr;
+    messageStore = nullptr;
+    indexService = nullptr;
+    decodeCacheService = nullptr;
 }
 
 // Extracts unique ECU IDs from a DLT file
 QStringList filtergrouplogs::extractEcuIds(const QString& dltFilePath) {
+    if (messageStore && dltFile) {
+        QSet<QString> uniqueEcuIds;
+        const auto &allIds = messageStore->snapshotAllMessageIds();
+        QDltMsg msg;
+        for (const MessageId messageId : allIds) {
+            if (!messageStore->message(messageId, msg))
+                continue;
+
+            const QString ecuId = msg.getEcuid();
+            if (!ecuId.isEmpty())
+                uniqueEcuIds.insert(ecuId);
+        }
+        extractedEcuIds = QStringList(uniqueEcuIds.begin(), uniqueEcuIds.end());
+        return extractedEcuIds;
+    }
+
+    if (decodeCacheService && dltFile) {
+        QSet<QString> uniqueEcuIds;
+        const int total = dltFile->size();
+        const bool decodeEnabled = false;
+        const int triggeredByUser = 0;
+        QDltMsg msg;
+        for (int i = 0; i < total; ++i) {
+            if (!decodeCacheService->message(dltFile,
+                                               pluginManager,
+                                               i,
+                                               decodeEnabled,
+                                               triggeredByUser,
+                                               msg,
+                                               true)) {
+                continue;
+            }
+
+            const QString ecuId = msg.getEcuid();
+            if (!ecuId.isEmpty())
+                uniqueEcuIds.insert(ecuId);
+        }
+        extractedEcuIds = QStringList(uniqueEcuIds.begin(), uniqueEcuIds.end());
+        return extractedEcuIds;
+    }
+
     QDltFile dltFile;
     QSet<QString> uniqueEcuIds;
     if (!dltFile.open(dltFilePath)) {
@@ -38,9 +85,21 @@ QStringList filtergrouplogs::extractEcuIds(const QString& dltFilePath) {
         dltFile.close();
         return QStringList();
     }
+    CDecodeCacheService localDecodeCacheService;
+    CDecodeCacheService *decodeService = decodeCacheService ? decodeCacheService : &localDecodeCacheService;
     for (int i = 0; i < dltFile.size(); i++) {
         QDltMsg msg;
-        if (dltFile.getMsg(i, msg)) {
+        const bool decodeEnabled = false;
+        const int triggeredByUser = 0;
+        const bool ok = decodeService->message(&dltFile,
+                                               pluginManager,
+                                               i,
+                                               decodeEnabled,
+                                               triggeredByUser,
+                                               msg,
+                                               true);
+
+        if (ok) {
             QString ecuId = msg.getEcuid();
             if (!ecuId.isEmpty()) {
                 uniqueEcuIds.insert(ecuId);
@@ -52,9 +111,79 @@ QStringList filtergrouplogs::extractEcuIds(const QString& dltFilePath) {
     return extractedEcuIds;
 }
 
+void filtergrouplogs::setMessageStore(CMessageStore *messageStore)
+{
+    this->messageStore = messageStore;
+}
+
+void filtergrouplogs::setIndexService(const CIndexService *indexService)
+{
+    this->indexService = indexService;
+}
+
+void filtergrouplogs::setDecodeCacheService(CDecodeCacheService *decodeCacheService)
+{
+    this->decodeCacheService = decodeCacheService;
+}
+
 // Creates tabs for each ECU ID and sets up the tab window UI
 void filtergrouplogs::ecuIdTabs(){
+    if (!dltFile || !sourceModelOfDLT) {
+        QMessageBox::information(nullptr, "No DLT file opened", "No DLT file is opened. Please open a DLT file");
+        return;
+    }
+
     QStringList availableEcuIds = extractedEcuIds;
+    if (availableEcuIds.isEmpty()) {
+        QMessageBox::information(nullptr, "No ECU IDs", "No ECU IDs were found in the current DLT file.");
+        return;
+    }
+
+    CIndexService localIndexService;
+    const CIndexService *activeIndexService = indexService ? indexService : &localIndexService;
+    const std::vector<int> filteredProjection =
+        activeIndexService->snapshotProjection(buildActiveFilteredProjection(dltFile));
+    ecuSourceRowProjection.clear();
+
+    QSet<QString> normalizedRequestedEcus;
+    for (const QString &ecuId : availableEcuIds) {
+        normalizedRequestedEcus.insert(ecuId.trimmed().toLower());
+    }
+
+    QDltMsg msg;
+    const int triggeredByUser = 0;
+    const bool decodeEnabled = false;
+    for (int sourceRow = 0; sourceRow < static_cast<int>(filteredProjection.size()); ++sourceRow) {
+        const int globalIndex = filteredProjection.at(static_cast<std::size_t>(sourceRow));
+        if (globalIndex < 0) {
+            continue;
+        }
+
+        bool gotMessage = false;
+        if (decodeCacheService) {
+            gotMessage = decodeCacheService->message(dltFile,
+                                                       pluginManager,
+                                                       globalIndex,
+                                                       decodeEnabled,
+                                                       triggeredByUser,
+                                                       msg,
+                                                       true);
+        } else if (messageStore) {
+            const MessageId messageId = messageStore->messageIdForGlobalIndex(globalIndex);
+            gotMessage = (messageId != kInvalidMessageId) && messageStore->message(messageId, msg);
+        }
+
+        if (!gotMessage) {
+            continue;
+        }
+
+        const QString normalizedEcu = msg.getEcuid().trimmed().toLower();
+        if (!normalizedRequestedEcus.contains(normalizedEcu)) {
+            continue;
+        }
+
+        ecuSourceRowProjection[normalizedEcu].push_back(sourceRow);
+    }
 
     /* Main Tab Window */
     QWidget* tabWindow = new QWidget;
@@ -100,23 +229,20 @@ void filtergrouplogs::ecuIdTabs(){
         int progressValue = ((i + 1) * 100) / totalEcuIds;
         loadingDialog.setValue(progressValue);
         QCoreApplication::processEvents();
-        QThread::msleep(30);
 
-        ecuIdFilterProxy = new EcuIdFilterProxyModel(this);
-        if (!ecuIdFilterProxy) {
-            continue;
-        }
-        ecuIdFilterProxy->setSourceModel(sourceModelOfDLT);
-        ecuIdFilterProxy->setEcuColumn(ecuColumnIndex);
-        ecuIdFilterProxy->setEcuId(ecuId);
+        ProjectionTableModel *projectionModel = new ProjectionTableModel(this);
+        projectionModel->setSourceModel(sourceModelOfDLT);
+        const auto projectionIt = ecuSourceRowProjection.find(ecuId.trimmed().toLower());
+        projectionModel->setProjectionRows(projectionIt != ecuSourceRowProjection.end() ? projectionIt->second : std::vector<int>());
+
         QTableView* view = new QTableView;
-        view->setModel(ecuIdFilterProxy);
+        view->setModel(projectionModel);
         view->horizontalHeader()->setStretchLastSection(true);
         view->setSelectionBehavior(QAbstractItemView::SelectRows);
         view->resizeColumnsToContents();
         // Hide unwanted columns
         auto settings = QDltSettingsManager::getInstance();
-        for (int col = 0; col < ecuIdFilterProxy->columnCount(); ++col) {
+        for (int col = 0; col < projectionModel->columnCount(); ++col) {
             bool show = FieldNames::getColumnShown(static_cast<FieldNames::Fields>(col), settings);
             view->setColumnHidden(col, !show);
             if (show) {
@@ -194,20 +320,36 @@ void filtergrouplogs::mergeTabs()
     for (int i = 0; i <= 100; i += 20) {
         progressBar->setValue(i);
         QCoreApplication::processEvents();
-        QThread::msleep(30);
     }
 
-    ecuIdFilterProxy = new EcuIdFilterProxyModel(this);
-    ecuIdFilterProxy->setSourceModel(sourceModelOfDLT);
-    ecuIdFilterProxy->setEcuColumn(ecuColumnIndex);
-    ecuIdFilterProxy->setEcuIdList(QSet<QString>(selectedIds.begin(), selectedIds.end()));
+    std::vector<int> mergedProjectionRows;
+    mergedProjectionRows.reserve(static_cast<std::size_t>(sourceModelOfDLT->rowCount()));
+    for (const QString &selectedId : selectedIds) {
+        const auto projectionIt = ecuSourceRowProjection.find(selectedId.trimmed().toLower());
+        if (projectionIt == ecuSourceRowProjection.end()) {
+            continue;
+        }
+
+        const std::vector<int> &rows = projectionIt->second;
+        for (const int row : rows) {
+            mergedProjectionRows.push_back(row);
+        }
+    }
+
+    std::sort(mergedProjectionRows.begin(), mergedProjectionRows.end());
+    mergedProjectionRows.erase(std::unique(mergedProjectionRows.begin(), mergedProjectionRows.end()), mergedProjectionRows.end());
+
+    ProjectionTableModel *projectionModel = new ProjectionTableModel(this);
+    projectionModel->setSourceModel(sourceModelOfDLT);
+    projectionModel->setProjectionRows(mergedProjectionRows);
+
     QTableView* mergedView = new QTableView;
-    mergedView->setModel(ecuIdFilterProxy);
+    mergedView->setModel(projectionModel);
     mergedView->horizontalHeader()->setStretchLastSection(true);
     mergedView->setSelectionBehavior(QAbstractItemView::SelectRows);
     mergedView->resizeColumnsToContents();
     auto settings = QDltSettingsManager::getInstance();
-    for (int col = 0; col < ecuIdFilterProxy->columnCount(); ++col) {
+    for (int col = 0; col < projectionModel->columnCount(); ++col) {
         bool show = FieldNames::getColumnShown(static_cast<FieldNames::Fields>(col), settings);
         mergedView->setColumnHidden(col, !show);
     }
@@ -289,9 +431,9 @@ void filtergrouplogs::onExportFilteredLogsClicked() {
         QMessageBox::critical(mergedTabWidget, "Export Error", "Could not find table view for selected tab.");
         return;
     }
-    EcuIdFilterProxyModel* proxyModel = qobject_cast<EcuIdFilterProxyModel*>(tableView->model());
-    if (!proxyModel) {
-        QMessageBox::critical(mergedTabWidget, "Export Error", "Could not access filtering model.");
+    ProjectionTableModel* projectionModel = qobject_cast<ProjectionTableModel*>(tableView->model());
+    if (!projectionModel || !projectionModel->sourceModel()) {
+        QMessageBox::critical(mergedTabWidget, "Export Error", "Could not access projection model.");
         return;
     }
 
@@ -301,19 +443,19 @@ void filtergrouplogs::onExportFilteredLogsClicked() {
     progress.show();
     try {
         QModelIndexList selectedIndices;
-        int rowCount = proxyModel->rowCount();
+        int rowCount = projectionModel->rowCount();
         if (rowCount == 0) {
             QMessageBox::information(mergedTabWidget, "Export", "No messages to export in selected tab.");
             return;
         }
 
-        // Map proxy model indices back to source model indices
+        // Map projection rows back to source model indices.
         for (int row = 0; row < rowCount; ++row) {
             if (progress.wasCanceled()) {
                 return;
             }
-            QModelIndex proxyIndex = proxyModel->index(row, 0);
-            QModelIndex sourceIndex = proxyModel->mapToSource(proxyIndex);
+            const int sourceRow = projectionModel->sourceRowForRow(row);
+            QModelIndex sourceIndex = sourceModelOfDLT->index(sourceRow, 0);
             if (sourceIndex.isValid()) {
                 selectedIndices.append(sourceIndex);
             }
@@ -401,3 +543,4 @@ void filtergrouplogs::setDltFile(QDltFile* file) {
 void filtergrouplogs::setPluginManager(QDltPluginManager* manager) {
     pluginManager = manager;
 }
+
