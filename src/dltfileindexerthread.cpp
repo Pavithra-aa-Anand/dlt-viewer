@@ -13,6 +13,8 @@ DltFileIndexerThread::DltFileIndexerThread
         QMap<DltFileIndexerKey,qint64> *indexFilterListSorted,
         QDltPluginManager *pluginManager,
         QList<QDltPlugin*> *activeViewerPlugins,
+    QDltFile *dltFile,
+    CDecodeCacheService *decodeCacheService,
         bool silentMode
 )
     :indexer(indexer),
@@ -23,6 +25,8 @@ DltFileIndexerThread::DltFileIndexerThread
       indexFilterListSorted(indexFilterListSorted),
       pluginManager(pluginManager),
       activeViewerPlugins(activeViewerPlugins),
+    dltFile(dltFile),
+    decodeCacheService(decodeCacheService),
       silentMode(silentMode), msgQueue(1024)
 {
 
@@ -117,10 +121,20 @@ void DltFileIndexerThread::processMessage(QSharedPointer<QDltMsg> &msg, int inde
     }
 
     /* Process all decoderplugins */
-    if ( pluginsEnabled == true )
-     {
-     (void) pluginManager->decodeMsg(*msg, silentMode);
-     }
+    if (pluginsEnabled && decodeCacheService && dltFile)
+    {
+        QDltMsg decoded;
+        if (decodeCacheService->message(dltFile,
+                                        pluginManager,
+                                        index,
+                                        true,
+                                        silentMode,
+                                        decoded,
+                                        true))
+        {
+            *msg = decoded;
+        }
+    }
 
 
     bool_result = filterList->checkFilter(*msg);

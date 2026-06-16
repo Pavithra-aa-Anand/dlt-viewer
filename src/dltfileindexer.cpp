@@ -59,6 +59,8 @@ DltFileIndexer::DltFileIndexer(QObject *parent) :
     filterIndexEnabled = false;
     filterIndexStart = 0;
     filterIndexEnd = 0;
+
+    messageStore.setFile(nullptr);
 }
 
 DltFileIndexer::DltFileIndexer(QDltFile *dltFile, QDltPluginManager *pluginManager, QDltDefaultFilter *defaultFilter, QMainWindow *parent) :
@@ -86,6 +88,8 @@ DltFileIndexer::DltFileIndexer(QDltFile *dltFile, QDltPluginManager *pluginManag
     filterIndexEnabled = false;
     filterIndexStart = 0;
     filterIndexEnd = 0;
+
+    messageStore.setFile(dltFile);
 }
 
 DltFileIndexer::~DltFileIndexer()
@@ -456,6 +460,8 @@ bool DltFileIndexer::indexFilter(QStringList filenames)
                 &indexFilterListSorted,
                 pluginManager,
                 &activeViewerPlugins,
+                dltFile,
+                &decodeCacheService,
                 silentMode
             );
 
@@ -476,7 +482,8 @@ bool DltFileIndexer::indexFilter(QStringList filenames)
     {
         msg = QSharedPointer<QDltMsg>::create(); // create new instance to be filled by getMsg(), otherwise shared pointer would be empty or pointing to last message
 
-        if(!dltFile->getMsg(ix, *msg))
+        const MessageId messageId = messageStore.messageIdForGlobalIndex(ix);
+        if(messageId == kInvalidMessageId || !messageStore.message(messageId, *msg))
             continue; // Skip broken messages
 
         /*if(true == useIndexerThread)
@@ -594,8 +601,14 @@ void DltFileIndexer::computeMarkerCountsFromIndex(const QDltFilterList &filterLi
             continue;
         }
 
+        const MessageId messageId = messageStore.messageIdForGlobalIndex(static_cast<int>(rawIndex));
+        if(messageId == kInvalidMessageId)
+        {
+            continue;
+        }
+
         QDltMsg msg;
-        if(!dltFile->getMsg(static_cast<int>(rawIndex), msg))
+        if(!messageStore.message(messageId, msg))
         {
             continue;
         }
@@ -641,6 +654,8 @@ bool DltFileIndexer::indexDefaultFilter()
             (
                 defaultFilter,
                 pluginManager,
+                dltFile,
+                &decodeCacheService,
                 silentMode
             );
 
@@ -655,7 +670,8 @@ bool DltFileIndexer::indexDefaultFilter()
     {
         msg = QSharedPointer<QDltMsg>::create();
         /* Fill message from file */
-        if(!dltFile->getMsg(ix, *msg))
+        const MessageId messageId = messageStore.messageIdForGlobalIndex(ix);
+        if(messageId == kInvalidMessageId || !messageStore.message(messageId, *msg))
         {
             /* Skip broken messages */
             continue;

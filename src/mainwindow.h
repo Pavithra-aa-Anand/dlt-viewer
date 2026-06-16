@@ -44,6 +44,9 @@
 #include "tablemodel.h"
 #include "settingsdialog.h"
 #include "searchdialog.h"
+#include "messagestore.h"
+#include "indexservice.h"
+#include "decodecacheservice.h"
 #include "filterdialog.h"
 #include "dltfileindexer.h"
 #include "workingdirectory.h"
@@ -137,8 +140,11 @@ private:
     QFile outputfile;
     bool outputfileIsTemporary;
     bool outputfileIsFromCLI;
-    TableModel *tableModel;
-    SearchTableModel *m_searchtableModel;
+    CTableModel *m_tableModel;
+    CSearchTableModel *m_searchtableModel;
+    CQDltFileMessageStoreAdapter m_messageStore;
+    CIndexService m_indexService;
+    CDecodeCacheService m_decodeCacheService;
     WorkingDirectory workingDirectory;
     bool filterIsChanged;
 
