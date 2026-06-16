@@ -80,6 +80,8 @@ private:
     long int lastSearchIndex;
     bool emptyForceFlag;
     bool loggingOnlyMode;
+    int m_lastKnownRowCount;
+    int m_lastKnownColumnCount;
 
     // cache is used in data()-method to avoid decoding of the same message multiple times
     // key is a message index in the qdltfile; message can fail to decode, in that case value is empty optional
@@ -94,6 +96,8 @@ private:
     QList<unsigned long int> selectedMarkerRows;
     //! Resolve model row index to global message index.
     int resolveGlobalIndexForRow(int row) const;
+    //! Notify Qt views about row/column delta updates.
+    void notifyModelDelta(int previousRowCount, int currentRowCount, int currentColumnCount);
     //! Compute message background color for a row.
     QColor getMsgBackgroundColor(const std::optional<QDltMsg>& msg, int index, long int filterposindex) const;
     //! Handle tooltip and related item-view events.
