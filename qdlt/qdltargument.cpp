@@ -663,7 +663,7 @@ bool QDltArgument::setValue(QVariant value, bool verboseMode)
         typeInfo = QDltArgument::DltTypeInfoRawd;
         return true;
     case QMetaType::QString:
-        data = value.toByteArray();
+        data = value.toString().toUtf8();
         typeInfo = QDltArgument::DltTypeInfoUtf8; // treat all strings as UTF-8 encoded
         return true;
     case QMetaType::Bool:
