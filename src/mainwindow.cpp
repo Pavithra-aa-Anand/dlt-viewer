@@ -861,9 +861,11 @@ void MainWindow::initFileHandling()
     connect(dltIndexer, SIGNAL(finishIndex()), this, SLOT(reloadLogFileFinishIndex()));
     connect(dltIndexer, SIGNAL(finishFilter()), this, SLOT(reloadLogFileFinishFilter()));
     connect(dltIndexer, SIGNAL(finishDefaultFilter()), this, SLOT(reloadLogFileFinishDefaultFilter()));
+    connect(dltIndexer, SIGNAL(runAborted()), this, SLOT(onIndexerRunFinished()));
     connect(dltIndexer, SIGNAL(timezone(int,unsigned char)), this, SLOT(controlMessage_Timezone(int,unsigned char)));
     connect(dltIndexer, SIGNAL(unregisterContext(QString,QString,QString)), this, SLOT(controlMessage_UnregisterContext(QString,QString,QString)));
     connect(dltIndexer, SIGNAL(finished()), this, SLOT(indexDone()));
+    connect(dltIndexer, SIGNAL(finished()), this, SLOT(onIndexerRunFinished()));
     connect(dltIndexer, SIGNAL(started()), this, SLOT(indexStart()));
 
     decodeManager = new DecodeManager(&pluginManager);
@@ -2657,7 +2659,7 @@ void MainWindow::reloadLogFileFinishIndex()
     m_tableModel->setForceEmpty(false);
     m_tableModel->modelChanged();
     this->update(); // force update
-    restoreSelection();
+    restoreSelection(false);
 
     if(( dltIndexer->getMode() == DltFileIndexer::modeIndex))
     {
@@ -2677,6 +2679,7 @@ void MainWindow::reloadLogFileFinishIndex()
     }
 
     liveDisplayedRowCount = qfile.sizeFilter();
+    onIndexerRunFinished();
 }
 
 void MainWindow::reloadLogFileFinishFilter()
@@ -2719,8 +2722,13 @@ void MainWindow::reloadLogFileFinishFilter()
     m_tableModel->setForceEmpty(false);
     m_tableModel->modelChanged();
     this->update(); // force update
-    restoreSelection();
+    restoreSelection(false);
     m_searchtableModel->modelChanged();
+
+    if(settings->autoScroll)
+    {
+        ui->tableView->scrollToBottom();
+    }
 
     // process getLogInfoMessages
     if ((dltIndexer->getMode() == DltFileIndexer::modeIndexAndFilter) &&
@@ -2753,6 +2761,24 @@ void MainWindow::reloadLogFileFinishFilter()
     statusProgressBar->hide();
 
     liveDisplayedRowCount = qfile.sizeFilter();
+    onIndexerRunFinished();
+}
+
+void MainWindow::onIndexerRunFinished()
+{
+    if(!m_liveFilterRefreshInProgress)
+    {
+        return;
+    }
+
+    m_liveFilterRefreshInProgress = false;
+    if(m_resumeDrawTimerAfterFilter)
+    {
+        const int drawInterval = (settings->RefreshRate > 0) ? 1000 / settings->RefreshRate
+                                                             : 1000 / DEFAULT_REFRESH_RATE;
+        drawTimer.start(drawInterval);
+    }
+    m_resumeDrawTimerAfterFilter = false;
 }
 
 void MainWindow::reloadLogFileFinishDefaultFilter()
@@ -2775,6 +2801,17 @@ void MainWindow::reloadLogFile(bool update, bool multithreaded)
     liveBatchPendingEvents = 0;
     liveBatchPendingMatches = 0;
     liveBatchEventQueued = false;
+    const bool liveFilterRefresh = update && isLiveLoggingActive();
+
+    if(liveFilterRefresh)
+    {
+        m_liveFilterRefreshInProgress = true;
+        m_resumeDrawTimerAfterFilter = drawTimer.isActive();
+        if(m_resumeDrawTimerAfterFilter)
+        {
+            drawTimer.stop();
+        }
+    }
 
     /* check if in logging only mode, then do not create index */
     m_tableModel->setLoggingOnlyMode(settings->loggingOnlyMode);
@@ -2840,7 +2877,7 @@ void MainWindow::reloadLogFile(bool update, bool multithreaded)
     }
 
     // clear all tables
-    if(!update)
+    if(!liveFilterRefresh)
     {
         ui->tableView->selectionModel()->clear();
     }
@@ -2856,8 +2893,11 @@ void MainWindow::reloadLogFile(bool update, bool multithreaded)
         tableModel->modelChanged();
     }
     // force empty table
-    m_tableModel->setForceEmpty(true);
-    m_tableModel->modelChanged();
+    if(!liveFilterRefresh)
+    {
+        m_tableModel->setForceEmpty(true);
+        m_tableModel->modelChanged();
+    }
 
     // Per-file UI state must not leak across opened files.
     // Clear manual markers (and dependent filter inclusion) when doing a full reload.
@@ -2872,7 +2912,7 @@ void MainWindow::reloadLogFile(bool update, bool multithreaded)
         qfile.setManualMarkerIndices(QList<unsigned long int>());
     }
 
-    if(!update)
+    if(!liveFilterRefresh)
     {
         qfile.setIndexFilter(QVector<qint64>());
     }
@@ -2894,7 +2934,10 @@ void MainWindow::reloadLogFile(bool update, bool multithreaded)
         }
     }
     //qfile.enableFilter(QDltSettingsManager::getInstance()->value("startup/filtersEnabled", true).toBool());
-    qfile.enableFilter(false);
+    if(!liveFilterRefresh)
+    {
+        qfile.enableFilter(false);
+    }
 
     // lock table view
     //ui->tableView->lock();
@@ -4214,6 +4257,11 @@ void MainWindow::connectAll()
     liveBatchPendingMatches = 0;
     liveDisplayedRowCount = qfile.sizeFilter();
     liveBatchEventQueued = false;
+    // periodically update table view to account for the new incoming messages
+    const int drawInterval = (settings->RefreshRate > 0) ? 1000 / settings->RefreshRate
+                                                         : 1000 / DEFAULT_REFRESH_RATE;
+    connect(&drawTimer, &QTimer::timeout, this, &MainWindow::drawUpdatedView, Qt::UniqueConnection);
+    drawTimer.start(drawInterval);
 }
 
 void MainWindow::disconnectAll()
@@ -5350,11 +5398,16 @@ bool MainWindow::event(QEvent *event)
 
 void MainWindow::drawUpdatedView()
 {
+    if(m_liveFilterRefreshInProgress)
+    {
+        return;
+    }
+
     statusByteErrorsReceived->setText(QString("Recv Errors: %L1").arg(totalByteErrorsRcvd));
     statusBytesReceived->setText(QString("Recv: %L1").arg(totalBytesRcvd));
     statusSyncFoundReceived->setText(QString("Sync found: %L1").arg(totalSyncFoundRcvd));
 
-    m_tableModel->modelChanged();
+    m_tableModel->liveDataAppended();
     //Line below would resize the payload column automatically so that the whole content is readable
     //ui->tableView->resizeColumnToContents(11); //Column 11 is the payload column
     if(settings->autoScroll) {
@@ -8062,6 +8115,14 @@ void MainWindow::filterUpdate()
 
 void MainWindow::on_tableView_customContextMenuRequested(QPoint pos)
 {
+    const QModelIndex clickedIndex = ui->tableView->indexAt(pos);
+    if(clickedIndex.isValid() && ui->tableView->selectionModel())
+    {
+        ui->tableView->selectionModel()->setCurrentIndex(
+            clickedIndex,
+            QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    }
+
     /* show custom pop menu  for configuration */
     QPoint globalPos = ui->tableView->mapToGlobal(pos);
     QMenu menu(ui->tableView);
@@ -8854,7 +8915,7 @@ void MainWindow::saveSelection()
     }
 }
 
-void MainWindow::restoreSelection()
+void MainWindow::restoreSelection(bool scrollToSelection)
 {
     int firstIndex = 0;
     //QModelIndex scrollToTarget = m_tableModel->index(0, 0);
@@ -8897,10 +8958,13 @@ void MainWindow::restoreSelection()
     // set all selections
     ui->tableView->selectionModel()->select(newSelection, QItemSelectionModel::Select|QItemSelectionModel::Rows);
 
-    // scroll to first selected row
-    ui->tableView->setFocus();  // focus must be set before scrollto is possible
-    QModelIndex idx = m_tableModel->index(firstIndex, col, QModelIndex());
-    ui->tableView->scrollTo(idx, QAbstractItemView::PositionAtTop);
+    if(scrollToSelection)
+    {
+        // scroll to first selected row
+        ui->tableView->setFocus();  // focus must be set before scrollto is possible
+        QModelIndex idx = m_tableModel->index(firstIndex, col, QModelIndex());
+        ui->tableView->scrollTo(idx, QAbstractItemView::PositionAtTop);
+    }
 }
 
 void MainWindow::on_tabWidget_currentChanged(int index)

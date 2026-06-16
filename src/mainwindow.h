@@ -272,6 +272,9 @@ private:
     /* DLT File opened only Read only */
     bool isDltFileReadOnly;
 
+    bool m_liveFilterRefreshInProgress{false};
+    bool m_resumeDrawTimerAfterFilter{false};
+
     /* flag for enabled / disabled status of plugins */
     bool pluginsEnabled;
 
@@ -429,7 +432,7 @@ private:
 
     void clearSelection();
     void saveSelection();
-    void restoreSelection();
+    void restoreSelection(bool scrollToSelection = true);
     QList<int> previousSelection;
 
     /* default filters */
@@ -464,6 +467,7 @@ private slots:
     void reloadLogFileFinishFilter();
     void reloadLogFileFinishDefaultFilter();
     void processPendingUpdateIndex();
+    void onIndexerRunFinished();
     void triggerPluginsAutoload();
 
     void onTableViewSelectionChanged(const QItemSelection & selected, const QItemSelection & deselected);

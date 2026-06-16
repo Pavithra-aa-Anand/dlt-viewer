@@ -853,14 +853,9 @@ void DltFileIndexer::run()
 
         if(runCfi)
         {
-            QStringList filenames;
-            for(int num=0;num<dltFile->getNumberOfFiles();num++)
-                filenames.append(dltFile->getFileName(num));
-            if((mode != modeNone) && !indexFilter(filenames))
-            {
-                // error
-                return;
-            }
+            // error
+            emit(runAborted());
+            return;
         }
         else
         {
@@ -881,6 +876,7 @@ void DltFileIndexer::run()
         if(false == indexDefaultFilter())
         {
             // error
+            emit(runAborted());
             return;
         }
         emit(finishDefaultFilter());
