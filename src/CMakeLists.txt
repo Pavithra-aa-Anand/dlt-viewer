@@ -84,10 +84,14 @@ add_executable(dlt-viewer
     searchform.cpp
     filtergrouplogs.h
     filtergrouplogs.cpp
+    indexthreadworker.h
+    indexthreadworker.cpp
     crlffilterwindow.h
     crlffilterwindow.cpp
     indexrowreferencemodel.h
     indexrowreferencemodel.cpp
+    decodemanager.h
+    decodemanager.cpp
     ${UI_RESOURCES_RCC}
     resources/dlt_viewer.rc
     ecutree.h

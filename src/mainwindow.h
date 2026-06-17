@@ -20,6 +20,7 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include <QEvent>
 #include <QFile>
 #include <QTimer>
 #include <QDir>
@@ -53,6 +54,7 @@
 #include "searchform.h"
 #include "updatechecker.h"
 #include "crlffilterwindow.h"
+#include "indexthreadworker.h"
 
 /**
  * @brief Namespace to contain the toolbar positions.
@@ -111,7 +113,6 @@ namespace Ui {
 
 struct EcuTree;
 class QDltExporter;
-class FilterThreadWorker;
 
 class MainWindow : public QMainWindow
 {
@@ -130,12 +131,7 @@ private:
     Ui::MainWindow *ui;
     /* Timer for connecting to ECUs */
     QTimer timer;
-
-    /* Timer for draw Event */
-    QTimer drawTimer;
-
-    /* Timer to coalesce live-logging index/UI updates, independent of drawTimer's refresh-rate cadence */
-    QTimer indexUpdateTimer;
+    QTimer m_liveBatchUpdateTimer;
 
     QDltControl qcontrol;
     QFile outputfile;
@@ -246,8 +242,6 @@ private:
 
     /* dlt-file Indexer with cancel cabability */
     DltFileIndexer *dltIndexer;
-    FilterThreadWorker *liveFilterWorker;
-    quint64 liveFilterGeneration;
 
     /* Color for blinking 'Apply changes'-button */
     QColor pulseButtonColor;
@@ -422,6 +416,38 @@ private:
 
     //File Splitting Settings
     QStringList outputFilePath;
+    IndexThreadWorker *m_indexWorker{nullptr};
+    bool m_indexUpdateInFlight{false};
+    bool m_indexUpdatePending{false};
+    bool m_batchUpdateEventPosted{false};
+    int m_pendingBatchFirstRow{-1};
+    int m_pendingBatchLastRow{-1};
+    int m_pendingLiveUpdateCount{0};
+
+    /**
+     * @brief Applies a processed indexing batch to the UI/data model state.
+     * @param result Batch output from the background index worker.
+     */
+    void processIndexBatchResult(const IndexThreadBatchResult &result);
+
+    /**
+     * @brief Posts a coalesced table-update event to the UI loop.
+     * @param firstRow First affected row.
+     * @param lastRow Last affected row.
+     */
+    void postBatchUpdateEvent(int firstRow, int lastRow);
+
+    /**
+     * @brief Flushes delayed live-update row range to the table view.
+     */
+    void flushPendingBatchUpdateEvent();
+
+    /**
+     * @brief Handles one queued batch-update event payload.
+     * @param firstRow First inserted/updated row.
+     * @param lastRow Last inserted/updated row.
+     */
+    void handleBatchUpdateEvent(int firstRow, int lastRow);
 
 
 
@@ -429,6 +455,12 @@ private:
 
 
 protected:
+    /**
+     * @brief Handles custom UI events including coalesced batch update events.
+     * @param event Event instance.
+     * @return True if handled, otherwise base implementation result.
+     */
+    bool event(QEvent *event) override;
     void keyPressEvent ( QKeyEvent * event ) override;
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dropEvent(QDropEvent *event) override;
@@ -467,6 +499,11 @@ private slots:
     void on_filterWidget_itemSelectionChanged();
 
     void on_filterWidget_itemClicked(QTreeWidgetItem *item, int column);
+    /**
+     * @brief Slot invoked when the index worker finishes a batch.
+     * @param result Processed batch output.
+     */
+    void onIndexBatchProcessed(const IndexThreadBatchResult &result);
 
     void on_pluginWidget_itemExpanded(QTreeWidgetItem* item);
 
