@@ -58,6 +58,13 @@ public:
     Project *project;
     QDltPluginManager *pluginManager;
     void modelChanged();
+
+    /**
+     * @brief Announces appended rows for incremental live updates.
+     * @param firstRow First appended row.
+     * @param lastRow Last appended row.
+     */
+    void appendRows(int firstRow, int lastRow);
     int setMarker(long int lineindex, QColor hlcolor); //used in search functionality
     int setManualMarker(QList<unsigned long int> selectedMarkerRows, QColor hlcolor); //used in mainwindow
     void setForceEmpty(bool emptyForceFlag) { this->emptyForceFlag = emptyForceFlag; }
@@ -66,23 +73,34 @@ public:
     QString getToolTipForFields(FieldNames::Fields cn);
 
 private:
-    struct DecodedMsgCacheEntry
-    {
-        long int filterPosIndex;
-        std::optional<QDltMsg> msg;
-    };
-
     long int lastSearchIndex;
     bool emptyForceFlag;
     bool loggingOnlyMode;
 
-    // Dedup getMsg()/decodeMsg() across roles and columns for recently rendered rows.
-    mutable QDltLruCache<int, DecodedMsgCacheEntry> m_cache{512};
-
-    std::optional<QDltMsg> getDecodedMsg(int row, long int filterposindex) const;
-    QVariant buildDisplayValue(int column, long int filterPosIndex, const std::optional<QDltMsg> &msg) const;
+    // cache is used in data()-method to avoid decoding of the same message multiple times
+    // key is a message index in the qdltfile; message can fail to decode, in that case value is empty optional
+    mutable QDltLruCache<long int, std::optional<QDltMsg>> m_cache{512};
+    // Cache formatted display values for recently painted cells to reduce UI-thread formatting churn.
+    mutable QDltLruCache<quint64, QVariant> m_renderCache{4096};
 
     long int searchhit;
+
+    /**
+     * @brief Builds a cache key for rendered cell values.
+     * @param row Row index.
+     * @param column Column index.
+     * @return Composite cache key.
+     */
+    quint64 renderCacheKey(int row, int column) const;
+
+    /**
+     * @brief Formats display value for a table cell.
+     * @param index Target model index.
+     * @param msg Optional decoded message.
+     * @param filterposindex Message index in filtered view.
+     * @return Rendered cell value.
+     */
+    QVariant buildDisplayData(const QModelIndex &index, std::optional<QDltMsg> &msg, long int filterposindex) const;
     QColor searchBackgroundColor() const;
     QColor searchhit_higlightColor;
     QColor manualMarkerColor;

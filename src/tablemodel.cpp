@@ -22,6 +22,7 @@
 #include <qmessagebox.h>
 
 #include "tablemodel.h"
+#include "decodemanager.h"
 #include "fieldnames.h"
 #include "dltuiutils.h"
 #include "dlt_protocol.h"
@@ -49,34 +50,204 @@ TableModel::TableModel(const QString & /*data*/, QObject *parent)
      if (!project || !project->settings)
          return DLT_VIEWER_COLUMN_COUNT;
      return DLT_VIEWER_COLUMN_COUNT+project->settings->showArguments;
+}
+
+ QVariant TableModel::data(const QModelIndex &index, int role) const
+ {
+     if (!qfile)
+     {
+         return QVariant();
+     }
+
+     if (!index.isValid())
+     {
+         return QVariant();
+     }
+
+     if (index.row() >= qfile->sizeFilter() || index.row()<0)
+     {
+         return QVariant();
+     }
+
+     if (loggingOnlyMode) {
+         if ((role == Qt::DisplayRole) && (index.column() == FieldNames::Payload))
+            return QString("Logging only Mode! Disable in Project Settings!");
+         else
+            return QVariant();
+     }
+
+     if (role == Qt::TextAlignmentRole)
+     {
+         return FieldNames::getColumnAlignment((FieldNames::Fields)index.column(),project->settings);
+     }
+
+     long int filterposindex = qfile->getMsgFilterPos(index.row());
+
+    std::optional<QDltMsg> msg;
+    if (m_cache.exists(filterposindex)) {
+        msg = m_cache.get(filterposindex);
+    } else {
+        QDltMsg omsg;
+        if (bool success = qfile->getMsg(filterposindex, omsg); success) {
+           msg = std::make_optional(omsg);
+               const bool decodeEnabled = QDltSettingsManager::getInstance()->value("startup/pluginsEnabled", true).toBool();
+               DecodeManager::instance().decode(pluginManager, *msg, decodeEnabled, !QDltOptManager::getInstance()->issilentMode());
+        }
+
+        m_cache.put(filterposindex, msg);
+    }
+
+    if (role == Qt::DisplayRole)
+    {
+        const quint64 cacheKey = renderCacheKey(index.row(), index.column());
+        if (m_renderCache.exists(cacheKey))
+        {
+            return m_renderCache.get(cacheKey);
+        }
+
+        const QVariant displayData = buildDisplayData(index, msg, filterposindex);
+        m_renderCache.put(cacheKey, displayData);
+        return displayData;
+     if ( role == Qt::ForegroundRole )
+     {
+         return QBrush(DltUiUtils::optimalTextColor(getMsgBackgroundColor(msg, index.row(), filterposindex)));
+     }
+
+     if ( role == Qt::BackgroundRole )
+     {
+         return QBrush(getMsgBackgroundColor(msg, index.row(), filterposindex));
+     }
+
+    if ( role == Qt::ToolTipRole )
+    {
+        if (!msg.has_value())
+        {
+            return QString("!!CORRUPTED MESSAGE!!");
+        }
+
+        QString visu_data = msg->toStringPayload().simplified().remove(QChar::Null);
+        if((QDltSettingsManager::getInstance()->value("startup/filtersEnabled", true).toBool()))
+        {
+            for(int num = 0; num < project->filter->topLevelItemCount (); num++) {
+                FilterItem *item = (FilterItem*)project->filter->topLevelItem(num);
+                if(item->checkState(0) == Qt::Checked && item->filter.enableRegexSearchReplace) {
+                    visu_data.replace(QRegularExpression(item->filter.regex_search), item->filter.regex_replace);
+                }
+            }
+        }
+
+        return visu_data;
+    }
+
+    return QVariant();
  }
 
-QVariant TableModel::buildDisplayValue(int column, long int filterPosIndex, const std::optional<QDltMsg> &msg) const
+QVariant TableModel::headerData(int section, Qt::Orientation orientation,
+                                int role) const
+{    
+    if (orientation == Qt::Horizontal)
+    {
+        switch (role)
+        {
+        case Qt::DisplayRole:
+            return FieldNames::getName((FieldNames::Fields)section, project->settings);
+        case Qt::TextAlignmentRole:
+            {
+            /*switch(section)
+                {
+                 //case FieldNames::Payload: return QVariant(Qt::AlignRight  | Qt::AlignVCenter);
+                default:
+                }*/
+            return FieldNames::getColumnAlignment((FieldNames::Fields)section,project->settings);
+            }
+         default:
+            break;
+        }
+    }
+
+    return QVariant();
+}
+
+ int TableModel::rowCount(const QModelIndex & /*parent*/) const
+ {
+     if(true == emptyForceFlag)
+         return 0;
+     else if(true == loggingOnlyMode)
+         return 1;
+     else
+         return qfile->sizeFilter();
+ }
+
+ void TableModel::modelChanged()
+ {
+     m_cache.clear();
+     m_renderCache.clear();
+
+     if(true == emptyForceFlag)
+     {
+         index(0, 1);
+         index(qfile->sizeFilter()-1, 0);
+         index(qfile->sizeFilter()-1, columnCount() - 1);
+     }
+     else
+     {
+         index(0, 1);
+         index(0, 0);
+         index(0, columnCount() - 1);
+     }
+
+     /* last search index must be deleted because model changed */
+     lastSearchIndex = -1;
+
+     /* row->filterPosIndex mapping may now point to different messages (new file, filter,
+      * settings or plugin changes), so cached decoded messages would otherwise be stale */
+     m_cache.clear();
+
+     emit(layoutChanged());
+ }
+
+void TableModel::appendRows(int firstRow, int lastRow)
+{
+    if(firstRow < 0 || lastRow < firstRow)
+    {
+        return;
+    }
+
+    beginInsertRows(QModelIndex(), firstRow, lastRow);
+    endInsertRows();
+}
+
+quint64 TableModel::renderCacheKey(int row, int column) const
+{
+    return (static_cast<quint64>(static_cast<quint32>(row)) << 32) |
+           static_cast<quint32>(column);
+}
+
+QVariant TableModel::buildDisplayData(const QModelIndex &index, std::optional<QDltMsg> &msg, long int filterposindex) const
 {
     if (!msg.has_value())
     {
-        if(column == FieldNames::Index)
+        if(index.column() == FieldNames::Index)
         {
-            return QString("%1").arg(filterPosIndex);
+            return QString("%1").arg(filterposindex);
         }
-        else if(column == FieldNames::Payload)
+        if(index.column() == FieldNames::Payload)
         {
+            qDebug() << "Corrupted message at index" << index.row();
             return QString("!!CORRUPTED MESSAGE!!");
         }
         return QVariant();
     }
 
     QString visu_data;
-    switch(column)
+    switch(index.column())
     {
     case FieldNames::Index:
-        /* display index */
-        return QString("%L1").arg(filterPosIndex);
+        return QString("%L1").arg(filterposindex);
     case FieldNames::Time:
         if( project->settings->automaticTimeSettings == 0 )
             return QString("%1.%2").arg(msg->getGmTimeWithOffsetString(project->settings->utcOffset,project->settings->dst)).arg(msg->getMicroseconds(),6,10,QLatin1Char('0'));
-        else
-            return QString("%1.%2").arg(msg->getTimeString()).arg(msg->getMicroseconds(),6,10,QLatin1Char('0'));
+        return QString("%1.%2").arg(msg->getTimeString()).arg(msg->getMicroseconds(),6,10,QLatin1Char('0'));
     case FieldNames::TimeStamp:
         return QString("%1.%2").arg(msg->getTimestamp()/10000).arg(msg->getTimestamp()%10000,4,10,QLatin1Char('0'));
     case FieldNames::Counter:
@@ -145,10 +316,7 @@ QVariant TableModel::buildDisplayValue(int column, long int filterPosIndex, cons
             {
                 return msg->getSessionName();
             }
-            else
-            {
-                return QString("%1").arg(msg->getSessionid());
-            }
+            return QString("%1").arg(msg->getSessionid());
         default:
             return QString("%1").arg(msg->getSessionid());
         }
@@ -161,11 +329,9 @@ QVariant TableModel::buildDisplayValue(int column, long int filterPosIndex, cons
     case FieldNames::ArgCount:
         return QString("%1").arg(msg->getNumberOfArguments());
     case FieldNames::Payload:
-        /* display payload */
         visu_data = msg->toStringPayload().simplified().remove(QChar::Null);
         if(qfile) qfile->applyRegExString(*msg,visu_data);
 
-        /* limit size of string to 1000 characters to speed up scrolling */
         if(visu_data.size()>1000)
         {
             visu_data = visu_data.mid(0,1000);
@@ -175,183 +341,20 @@ QVariant TableModel::buildDisplayValue(int column, long int filterPosIndex, cons
     case FieldNames::MessageId:
         return QString::asprintf(project->settings->msgIdFormat.toUtf8(), msg->getMessageId());
     default:
-        if (column>=FieldNames::Arg0)
+        if (index.column()>=FieldNames::Arg0)
         {
-            int col=column-FieldNames::Arg0; //arguments a zero based
+            int col=index.column()-FieldNames::Arg0;
             QDltArgument arg;
             if (msg->getArgument(col,arg))
             {
                 return arg.toString();
             }
-            else
-            {
-                return QString(" - ");
-            }
+            return QString(" - ");
         }
     }
 
     return QVariant();
 }
-
-
-std::optional<QDltMsg> TableModel::getDecodedMsg(int row, long int filterposindex) const
-{
-    const DecodedMsgCacheEntry* msgEntry = m_cache.getPtr(row);
-    if (msgEntry && msgEntry->filterPosIndex == filterposindex)
-    {
-        return msgEntry->msg;
-    }
-
-    DecodedMsgCacheEntry newMsgEntry;
-    newMsgEntry.filterPosIndex = filterposindex;
-
-    QDltMsg omsg;
-    if (bool success = qfile->getMsg(filterposindex, omsg); success)
-    {
-        newMsgEntry.msg = std::make_optional(omsg);
-        if (QDltSettingsManager::getInstance()->value("startup/pluginsEnabled", true).toBool())
-        {
-            pluginManager->decodeMsg(*newMsgEntry.msg, !QDltOptManager::getInstance()->issilentMode());
-        }
-    }
-
-    m_cache.put(row, newMsgEntry);
-    return newMsgEntry.msg;
-}
-
-
- QVariant TableModel::data(const QModelIndex &index, int role) const
- {
-     if (!qfile)
-     {
-         return QVariant();
-     }
-
-     if (!index.isValid())
-     {
-         return QVariant();
-     }
-
-     if (index.row() >= qfile->sizeFilter() || index.row()<0)
-     {
-         return QVariant();
-     }
-
-     if (loggingOnlyMode) {
-         if ((role == Qt::DisplayRole) && (index.column() == FieldNames::Payload))
-            return QString("Logging only Mode! Disable in Project Settings!");
-         else
-            return QVariant();
-     }
-
-     if (role == Qt::TextAlignmentRole)
-     {
-         return FieldNames::getColumnAlignment((FieldNames::Fields)index.column(),project->settings);
-     }
-
-     long int filterposindex = qfile->getMsgFilterPos(index.row());
-
-     std::optional<QDltMsg> msg = getDecodedMsg(index.row(), filterposindex);
-
-     if (role == Qt::DisplayRole)
-     {
-         return buildDisplayValue(index.column(), filterposindex, msg);
-     }
-
-     if ( role == Qt::ForegroundRole )
-     {
-         return QBrush(DltUiUtils::optimalTextColor(getMsgBackgroundColor(msg, index.row(), filterposindex)));
-     }
-
-     if ( role == Qt::BackgroundRole )
-     {
-         return QBrush(getMsgBackgroundColor(msg, index.row(), filterposindex));
-     }
-
-    if ( role == Qt::ToolTipRole )
-    {
-        if (!msg.has_value())
-        {
-            return QString("!!CORRUPTED MESSAGE!!");
-        }
-
-        QString visu_data = msg->toStringPayload().simplified().remove(QChar::Null);
-        if((QDltSettingsManager::getInstance()->value("startup/filtersEnabled", true).toBool()))
-        {
-            for(int num = 0; num < project->filter->topLevelItemCount (); num++) {
-                FilterItem *item = (FilterItem*)project->filter->topLevelItem(num);
-                if(item->checkState(0) == Qt::Checked && item->filter.enableRegexSearchReplace) {
-                    visu_data.replace(QRegularExpression(item->filter.regex_search), item->filter.regex_replace);
-                }
-            }
-        }
-
-        return visu_data;
-    }
-
-     return QVariant();
- }
-
-QVariant TableModel::headerData(int section, Qt::Orientation orientation,
-                                int role) const
-{    
-    if (orientation == Qt::Horizontal)
-    {
-        switch (role)
-        {
-        case Qt::DisplayRole:
-            return FieldNames::getName((FieldNames::Fields)section, project->settings);
-        case Qt::TextAlignmentRole:
-            {
-            /*switch(section)
-                {
-                 //case FieldNames::Payload: return QVariant(Qt::AlignRight  | Qt::AlignVCenter);
-                default:
-                }*/
-            return FieldNames::getColumnAlignment((FieldNames::Fields)section,project->settings);
-            }
-         default:
-            break;
-        }
-    }
-
-    return QVariant();
-}
-
- int TableModel::rowCount(const QModelIndex & /*parent*/) const
- {
-     if(true == emptyForceFlag)
-         return 0;
-     else if(true == loggingOnlyMode)
-         return 1;
-     else
-         return qfile->sizeFilter();
- }
-
- void TableModel::modelChanged()
- {
-     if(true == emptyForceFlag)
-     {
-         index(0, 1);
-         index(qfile->sizeFilter()-1, 0);
-         index(qfile->sizeFilter()-1, columnCount() - 1);
-     }
-     else
-     {
-         index(0, 1);
-         index(0, 0);
-         index(0, columnCount() - 1);
-     }
-
-     /* last search index must be deleted because model changed */
-     lastSearchIndex = -1;
-
-     /* row->filterPosIndex mapping may now point to different messages (new file, filter,
-      * settings or plugin changes), so cached decoded messages would otherwise be stale */
-     m_cache.clear();
-
-     emit(layoutChanged());
- }
 
 int TableModel::setManualMarker(QList<unsigned long int> selectedRows, QColor hlcolor) //used in mainwindow
 {
