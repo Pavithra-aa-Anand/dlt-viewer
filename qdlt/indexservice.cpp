@@ -18,33 +18,6 @@
 
 #include "indexservice.h"
 
-namespace
-{
-
-/**
- * @brief Build a sanitized projection snapshot.
- *
- * Creates a copy of the provided projection and keeps only valid
- * non-negative global indices, preserving input order.
- *
- * @param projectionInput Source projection that may contain invalid entries.
- * @return A new projection vector containing only indices >= 0.
- */
-std::vector<int> snapshotValidProjection(const std::vector<int> &projectionInput)
-{
-    std::vector<int> projection;
-    projection.reserve(projectionInput.size());
-    for (const int index : projectionInput)
-    {
-        if (index >= 0)
-            projection.push_back(index);
-    }
-
-    return projection;
-}
-
-} // namespace
-
 std::size_t CIndexService::fullRowCount(const std::vector<int> &fullProjection) const
 {
     return fullProjection.size();
@@ -76,5 +49,13 @@ int CIndexService::globalIndexForFilteredRow(int row,
 
 std::vector<int> CIndexService::snapshotProjection(const std::vector<int> &projection) const
 {
-    return snapshotValidProjection(projection);
+    std::vector<int> snapshot;
+    snapshot.reserve(projection.size());
+    for (const int index : projection)
+    {
+        if (index >= 0)
+            snapshot.push_back(index);
+    }
+
+    return snapshot;
 }

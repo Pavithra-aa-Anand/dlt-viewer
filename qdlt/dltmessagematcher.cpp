@@ -9,6 +9,15 @@ bool DltMessageMatcher::match(const QDltMsg &msg, const Pattern& pattern) const
     if (!matchAppId(msg.getApid()) || !matchCtxId(msg.getCtid()))
         return false;
 
+    const bool isRegexPattern = std::holds_alternative<QRegularExpression>(pattern);
+    const QString *searchText = nullptr;
+    if (!isRegexPattern)
+    {
+        searchText = &std::get<QString>(pattern);
+        if (searchText->isEmpty())
+            return m_headerSearchEnabled || m_payloadSearchEnabled;
+    }
+
     if (!matchTimestampRange(msg.getTimestamp())) {
         return false;
     }
@@ -23,13 +32,12 @@ bool DltMessageMatcher::match(const QDltMsg &msg, const Pattern& pattern) const
     bool matchFound = false;
     if (m_headerSearchEnabled) {
         auto header = msg.toStringHeader();
-        if (m_messageIdFormat)
-            header += ' ' + QString::asprintf(m_messageIdFormat->toUtf8(), msg.getMessageId());
-        if (std::holds_alternative<QRegularExpression>(pattern)) {
+        if (m_messageIdFormatUtf8)
+            header += ' ' + QString::asprintf(m_messageIdFormatUtf8->constData(), msg.getMessageId());
+        if (isRegexPattern) {
             matchFound = header.contains(std::get<QRegularExpression>(pattern));
         } else {
-            const auto& searchText = std::get<QString>(pattern);
-            matchFound = searchText.isEmpty() || header.contains(searchText, m_caseSensitivity);
+            matchFound = header.contains(*searchText, m_caseSensitivity);
         }
     }
 
@@ -38,11 +46,10 @@ bool DltMessageMatcher::match(const QDltMsg &msg, const Pattern& pattern) const
 
     if (m_payloadSearchEnabled) {
         const auto payload = msg.toStringPayload();
-        if (std::holds_alternative<QRegularExpression>(pattern)) {
+        if (isRegexPattern) {
             matchFound = payload.contains(std::get<QRegularExpression>(pattern));
         } else {
-            const auto& searchText = std::get<QString>(pattern);
-            matchFound = payload.contains(searchText, m_caseSensitivity);
+            matchFound = payload.contains(*searchText, m_caseSensitivity);
         }
     }
 

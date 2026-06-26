@@ -69,10 +69,14 @@ void DltFileIndexerThread::processMessage(QSharedPointer<QDltMsg> &msg, int inde
        msg->getCtrlServiceId() == DLT_SERVICE_ID_GET_SOFTWARE_VERSION)
     {
         QByteArray payload = msg->getPayload();
-        QByteArray data = payload.mid(9, (payload.size() > 262) ? 256 : (payload.size() - 9));
-        QString version = QDlt::toAscii(data,true);
-        version = version.trimmed(); // remove all white spaces at beginning and end
-        indexer->versionString(msg->getEcuid(),version);
+        if (payload.size() > 9)
+        {
+            const int len = qMin(256, payload.size() - 9);
+            const QByteArray data = QByteArray::fromRawData(payload.constData() + 9, len);
+            QString version = QDlt::toAscii(data, true);
+            version = version.trimmed(); // remove all white spaces at beginning and end
+            indexer->versionString(msg->getEcuid(), version);
+        }
     }
 
     /* check if it is a timezone message */

@@ -201,6 +201,11 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
     }
 
     isSearchCancelled.store(false, std::memory_order_relaxed);
+    
+    // Optimization: Increase cache size for search to improve hit rate for repeated random access.
+    // Search workload accesses many different messages multiple times; larger cache reduces parse overhead.
+    file->setCacheSize(5000);
+    
     m_decodeCacheService.clearForFile(file);
 
     m_findAllUiUpdateTimer.restart();
@@ -383,6 +388,10 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
 
 void CSearchDialog::onFindAllFinished()
 {
+    // Restore cache size to default after search completes
+    if (file)
+        file->setCacheSize(1000);
+
     // Ensure the last batch of incremental updates is reflected.
     emit refreshedSearchIndex();
 

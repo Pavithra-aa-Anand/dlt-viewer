@@ -24,6 +24,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
@@ -90,7 +91,7 @@ private:
 
     std::mutex m_cacheLock;
     std::unordered_map<CacheKey, QDltMsg, CacheKeyHash> m_cache;
-    std::vector<CacheKey> m_fifoOrder;
+    std::deque<CacheKey> m_fifoOrder;
 
     //! Evict oldest entries until the cache is within limits.
     void pruneIfNeeded();

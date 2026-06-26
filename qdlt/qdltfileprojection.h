@@ -25,7 +25,7 @@
 
 class QDltFile;
 
-//! Build the active filtered projection from a QDltFile.
+//! Generates projection from file/filter state.
 QDLT_EXPORT std::vector<int> buildActiveFilteredProjection(const QDltFile *file);
 
 #endif // QDLTFILEPROJECTION_H

@@ -379,14 +379,14 @@ int CTableModel::resolveGlobalIndexForRow(int row) const
 {
     if (!qfile || row < 0)
         return -1;
-
+    // Filter is OFF
     if (!qfile->isFilter())
     {
         if (row >= qfile->size())
             return -1;
         return row;
     }
-
+    // Filter is ON
     if (m_filteredProjectionCache.size() != qfile->sizeFilter())
     {
         CIndexService indexService;

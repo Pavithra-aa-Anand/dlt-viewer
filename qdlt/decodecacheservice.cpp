@@ -27,7 +27,6 @@
 CDecodeCacheService::CDecodeCacheService()
 {
     m_cache.reserve(static_cast<std::size_t>(kMaxEntries));
-    m_fifoOrder.reserve(kMaxEntries);
 }
 
 bool CDecodeCacheService::message(const QDltFile *file,
@@ -42,9 +41,6 @@ bool CDecodeCacheService::message(const QDltFile *file,
         return false;
 
     CQDltFileMessageStoreAdapter messageStore(file);
-    const MessageId messageId = messageStore.messageIdForGlobalIndex(globalIndex);
-    if (messageId == kInvalidMessageId)
-        return false;
 
     const CacheKey key{file, globalIndex, decodeEnabled, triggeredByUser};
 
@@ -60,7 +56,7 @@ bool CDecodeCacheService::message(const QDltFile *file,
     }
 
     QDltMsg loaded;
-    if (!messageStore.message(messageId, loaded))
+    if (!messageStore.message(static_cast<MessageId>(globalIndex), loaded))
         return false;
 
     if (decodeEnabled && !decode(pluginManager, triggeredByUser, loaded))
@@ -117,8 +113,7 @@ void CDecodeCacheService::clearForFile(const QDltFile *file)
             ++it;
     }
 
-    std::vector<CacheKey> filtered;
-    filtered.reserve(m_fifoOrder.size());
+    std::deque<CacheKey> filtered;
     for (const CacheKey &key : m_fifoOrder)
     {
         if (key.file != file)
@@ -133,16 +128,13 @@ void CDecodeCacheService::pruneIfNeeded()
         return;
 
     const std::size_t pruneCount = m_cache.size() - static_cast<std::size_t>(kMaxEntries);
-    int removed = 0;
-    int cursor = 0;
+    std::size_t removed = 0;
 
-    while (removed < pruneCount && cursor < m_fifoOrder.size())
+    while (removed < pruneCount && !m_fifoOrder.empty())
     {
-        const CacheKey key = m_fifoOrder.at(static_cast<std::size_t>(cursor++));
+        const CacheKey key = m_fifoOrder.front();
+        m_fifoOrder.pop_front();
         if (m_cache.erase(key) != 0)
             ++removed;
     }
-
-    if (cursor > 0)
-        m_fifoOrder.erase(m_fifoOrder.begin(), m_fifoOrder.begin() + static_cast<std::ptrdiff_t>(cursor));
 }
