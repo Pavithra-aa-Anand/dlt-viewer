@@ -88,6 +88,13 @@
 #include "filespliting.h"
 
 
+namespace {
+void logLiveTiming(const char *operation, qint64 elapsedMs)
+{
+    qInfo().nospace() << "[Timing][Live][" << operation << "] total=" << elapsedMs << " ms";
+}
+}
+
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow),
@@ -1793,10 +1800,26 @@ bool MainWindow::startExportThread(QDltExporter *exporterThread, QModelIndexList
     }
 
     activeExporterThread = exporterThread;
+    if(isLiveLoggingActive())
+    {
+        liveExportTimingActive = true;
+        liveExportTimer.start();
+    }
+    else
+    {
+        liveExportTimingActive = false;
+    }
+
     connect(exporterThread, &QDltExporter::progress,    this, &MainWindow::progress);
     connect(exporterThread, &QDltExporter::resultReady, this, &MainWindow::handleExportResults);
     connect(exporterThread, &QDltExporter::finished,    exporterThread, &QObject::deleteLater);
     connect(exporterThread, &QDltExporter::finished, this, [this, exporterThread, ownedSelection]() {
+        if(liveExportTimingActive && liveExportTimer.isValid())
+        {
+            logLiveTiming("Export", liveExportTimer.elapsed());
+        }
+        liveExportTimingActive = false;
+
         if(ownedSelection)
             delete ownedSelection;
         if(activeExporterThread == exporterThread)
@@ -1819,6 +1842,8 @@ void MainWindow::stopExportIfRunning()
         QMessageBox::warning(this, QString("DLT Viewer"),
                              QString("Export is still stopping. Please try again in a moment."));
     }
+
+    liveExportTimingActive = false;
 }
 
 bool MainWindow::manualMarkerUnionEnabled() const
@@ -2001,10 +2026,18 @@ void MainWindow::exportSelection(bool ascii = true,bool file = false,QDltExporte
 
     filterUpdate(); // update filters of qfile before starting Exporting for RegEx operation
 
+    const bool measureLiveExport = isLiveLoggingActive();
+    QElapsedTimer exportTimer;
+    if(measureLiveExport)
+        exportTimer.start();
+
     QDltExporter exporter(&qfile,"",&pluginManager,format,QDltExporter::SelectionSelected,&list,project.settings->automaticTimeSettings,project.settings->utcOffset,project.settings->dst,QDltOptManager::getInstance()->getDelimiter(),QDltOptManager::getInstance()->getSignature());
     connect(&exporter,SIGNAL(clipboard(QString)),this,SLOT(clipboard(QString)));
     exporter.exportMessages();
     disconnect(&exporter,SIGNAL(clipboard(QString)),this,SLOT(clipboard(QString)));
+
+    if(measureLiveExport && exportTimer.isValid())
+        logLiveTiming("Export", exportTimer.elapsed());
 }
 
 void MainWindow::exportSelection_searchTable(QDltExporter::DltExportFormat format = QDltExporter::FormatClipboard, const QString& fileName)
@@ -2111,10 +2144,18 @@ void MainWindow::exportSelection_searchTable(QDltExporter::DltExportFormat forma
         return;
     }
 
+    const bool measureLiveExport = isLiveLoggingActive();
+    QElapsedTimer exportTimer;
+    if(measureLiveExport)
+        exportTimer.start();
+
     QDltExporter exporter(&qfile,exportFile,&pluginManager,format,QDltExporter::SelectionSelected,&exportIndices,project.settings->automaticTimeSettings,project.settings->utcOffset,project.settings->dst,QDltOptManager::getInstance()->getDelimiter(),QDltOptManager::getInstance()->getSignature());
     connect(&exporter,SIGNAL(clipboard(QString)),this,SLOT(clipboard(QString)));
     exporter.exportMessages();
     disconnect(&exporter,SIGNAL(clipboard(QString)),this,SLOT(clipboard(QString)));
+
+    if(measureLiveExport && exportTimer.isValid())
+        logLiveTiming("Export", exportTimer.elapsed());
 }
 
 void MainWindow::on_actionExport_triggered()
@@ -2651,6 +2692,12 @@ void MainWindow::reloadLogFileFinishFilter()
     // hide progress bar when finished
     statusProgressBar->reset();
     statusProgressBar->hide();
+
+    if(liveFilterApplyTimingActive && liveFilterApplyTimer.isValid())
+    {
+        logLiveTiming("FilterApply", liveFilterApplyTimer.elapsed());
+    }
+    liveFilterApplyTimingActive = false;
 }
 
 void MainWindow::reloadLogFileFinishDefaultFilter()
@@ -8406,6 +8453,16 @@ void MainWindow::syncCheckBoxesAndMenu()
 
 void MainWindow::on_applyConfig_clicked()
 {
+    if(isLiveLoggingActive())
+    {
+        liveFilterApplyTimingActive = true;
+        liveFilterApplyTimer.start();
+    }
+    else
+    {
+        liveFilterApplyTimingActive = false;
+    }
+
     syncCheckBoxesAndMenu();
     applyConfigEnabled(false);
     filterUpdate();
@@ -8670,11 +8727,32 @@ void MainWindow::onAddActionToHistory()
 
 void MainWindow::onSearchProgressChanged(bool isInProgress)
 {
+    if(isInProgress)
+    {
+        if(isLiveLoggingActive())
+        {
+            liveSearchTimingActive = true;
+            liveSearchTimer.start();
+        }
+        else
+        {
+            liveSearchTimingActive = false;
+        }
+    }
+
     isSearchOngoing = isInProgress;
     ui->menuBar->setEnabled(!isInProgress);
     ui->mainToolBar->setEnabled(!isInProgress);
     if(!isInProgress)
+    {
+        if(liveSearchTimingActive && liveSearchTimer.isValid())
+        {
+            logLiveTiming("Search", liveSearchTimer.elapsed());
+        }
+        liveSearchTimingActive = false;
+
         searchInput->resetProgress();
+    }
 
     ui->actionFindNext->setEnabled(!isInProgress);
     ui->actionFindPrevious->setEnabled(!isInProgress);

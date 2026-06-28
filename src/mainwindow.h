@@ -268,6 +268,13 @@ private:
     bool markedRowCacheValid = false;
     QVector<int> markedRowsInView;
 
+    bool liveSearchTimingActive = false;
+    QElapsedTimer liveSearchTimer;
+    bool liveFilterApplyTimingActive = false;
+    QElapsedTimer liveFilterApplyTimer;
+    bool liveExportTimingActive = false;
+    QElapsedTimer liveExportTimer;
+
     bool isLiveLoggingActive() const;
 
     bool manualMarkerUnionEnabled() const;
