@@ -13,7 +13,8 @@ DltFileIndexerThread::DltFileIndexerThread
         QMap<DltFileIndexerKey,qint64> *indexFilterListSorted,
         QDltPluginManager *pluginManager,
         QList<QDltPlugin*> *activeViewerPlugins,
-        QList<QDltPlugin*> *activeDecoderPlugins,
+    QDltFile *dltFile,
+    CDecodeCacheService *decodeCacheService,
         bool silentMode
 )
     :indexer(indexer),
@@ -24,8 +25,8 @@ DltFileIndexerThread::DltFileIndexerThread
       indexFilterListSorted(indexFilterListSorted),
       pluginManager(pluginManager),
       activeViewerPlugins(activeViewerPlugins),
-      filterNeedsDecodedText(filterList ? filterList->needsDecodedText() : false),
-      activeDecoderPlugins(activeDecoderPlugins),
+    dltFile(dltFile),
+    decodeCacheService(decodeCacheService),
       silentMode(silentMode), msgQueue(1024)
 {
 
@@ -68,11 +69,15 @@ void DltFileIndexerThread::processMessage(QDltMsg &msg, int index)
        msg.getSubtype() == QDltMsg::DltControlResponse &&
        msg.getCtrlServiceId() == DLT_SERVICE_ID_GET_SOFTWARE_VERSION)
     {
-        QByteArray payload = msg.getPayload();
-        QByteArray data = payload.mid(9, (payload.size() > 262) ? 256 : (payload.size() - 9));
-        QString version = QDlt::toAscii(data,true);
-        version = version.trimmed(); // remove all white spaces at beginning and end
-        indexer->versionString(msg.getEcuid(),version);
+        QByteArray payload = msg->getPayload();
+        if (payload.size() > 9)
+        {
+            const int len = qMin(256, payload.size() - 9);
+            const QByteArray data = QByteArray::fromRawData(payload.constData() + 9, len);
+            QString version = QDlt::toAscii(data, true);
+            version = version.trimmed(); // remove all white spaces at beginning and end
+            indexer->versionString(msg->getEcuid(), version);
+        }
     }
 
     /* check if it is a timezone message */
@@ -120,10 +125,20 @@ void DltFileIndexerThread::processMessage(QDltMsg &msg, int index)
         }
     }
 
-    /* Process all decoderplugins using pre-snapshotted list to avoid lock contention in hot path */
-    if(pluginsEnabled && activeDecoderPlugins != nullptr && pluginManager != nullptr)
+    /* Process all decoderplugins */
+    if (pluginsEnabled && decodeCacheService && dltFile)
     {
-        pluginManager->decodeMsgUsingPlugins(*activeDecoderPlugins, msg, silentMode);
+        QDltMsg decoded;
+        if (decodeCacheService->message(dltFile,
+                                        pluginManager,
+                                        index,
+                                        true,
+                                        silentMode,
+                                        decoded,
+                                        true))
+        {
+            *msg = decoded;
+        }
     }
 
     bool_result = filterList->checkFilter(msg);

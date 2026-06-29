@@ -19,6 +19,7 @@
 
 #include "filtergrouplogs.h"
 #include "ui_mainwindow.h"
+#include "qdltfileprojection.h"
 #include <algorithm>
 #include <QMimeData>
 #include <QTreeView>
@@ -114,9 +115,7 @@ MainWindow::MainWindow(QWidget *parent) :
     drawTimer(this),
     indexUpdateTimer(this),
     qcontrol(this),
-    crlfFilterWindow(nullptr),
-    liveFilterWorker(nullptr),
-    liveFilterGeneration(1),
+    m_crlfFilterWindow(nullptr),
     pulseButtonColor(255, 40, 40),
     isSearchOngoing(false)
 {
@@ -7419,9 +7418,6 @@ void MainWindow::splitLogsEcuid()
 
         // Set up all necessary references
         filterLogsEcuid->setSourceModel(sourceModel);
-        filterLogsEcuid->setDltFile(&qfile);
-        filterLogsEcuid->setPluginManager(&pluginManager);
-
         filterLogsEcuid->ecuIdTabs();
     } else {
         QMessageBox::warning(this, "Warning", "No DLT file is currently loaded.");
@@ -7453,13 +7449,13 @@ void MainWindow::showCrlfMessages()
     m_crlfFilterWindow->setDecodeCacheService(&m_decodeCacheService);
     
     // Connect navigation signal to allow double-click navigation to main window
-    connect(crlfFilterWindow, &CrlfFilterWindow::jumpToMessageRequested, this, &MainWindow::jump_to_line);
+    connect(m_crlfFilterWindow, &CrlfFilterWindow::jumpToMessageRequested, this, &MainWindow::jump_to_line);
     // Add connection to handle main window closing
-    connect(this, &MainWindow::destroyed, crlfFilterWindow, &CrlfFilterWindow::cleanup);
+    connect(this, &MainWindow::destroyed, m_crlfFilterWindow, &CrlfFilterWindow::cleanup);
     
     // Connect to handle CRLF window closing to reset the pointer
-    connect(crlfFilterWindow, &QObject::destroyed, this, [this]() {
-        crlfFilterWindow = nullptr;
+    connect(m_crlfFilterWindow, &QObject::destroyed, this, [this]() {
+        m_crlfFilterWindow = nullptr;
     });
     // Create and show the CRLF filter window
     m_crlfFilterWindow->createCrlfWindow();
@@ -7468,7 +7464,6 @@ void MainWindow::showCrlfMessages()
 void MainWindow::filterAddTable() {
     QModelIndexList list = ui->tableView->selectionModel()->selection().indexes();
     QDltMsg msg;
-    QByteArray data;
 
     if(list.count()<=0)
     {

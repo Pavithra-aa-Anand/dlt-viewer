@@ -24,8 +24,13 @@
 #include <QVector>
 #include <qdltlrucache.hpp>
 
+#include <cstdint>
+#include <cstddef>
+#include <vector>
+
 #include "project.h"
 #include "qdltpluginmanager.h"
+#include "decodecacheservice.h"
 
 #define DLT_VIEWER_SEARCHCOLUMN_COUNT FieldNames::Arg0
 
@@ -38,25 +43,36 @@ public:
     //! Destroy the search result model.
     ~CSearchTableModel();
 
+    //! Return column header text and metadata.
     QVariant headerData(int section, Qt::Orientation orientation,
          int role = Qt::DisplayRole) const;
 
+    //! Return model data for a search result row.
     QVariant data(const QModelIndex &index, int role) const;
 
+    //! Return the number of search result rows.
     int rowCount(const QModelIndex & /*parent*/) const;
+    //! Return the number of display columns.
     int columnCount(const QModelIndex &parent = QModelIndex()) const;
 
+    //! Notify views that model contents changed.
     void modelChanged();
 
+    //! Remove all search results.
     void clear_SearchResults();
+    //! Append a single search hit.
     void add_SearchResultEntry(unsigned long entry);
-    void add_SearchResultEntries(const QList<unsigned long>& entries);
+    //! Append multiple search hits.
+    void add_SearchResultEntries(const std::vector<std::uint64_t> &entries);
 
 
+    //! Return the current number of search hits.
     int get_SearchResultListSize() const;
+    //! Read one search hit by position.
     bool get_SearchResultEntry(int position, unsigned long &entry);
 
-    QColor getMsgBackgroundColor(const QDltMsg &msg) const;
+    //! Determine background color for a decoded message.
+    QColor getMsgBackgroundColor(QDltMsg &msg) const;
 
     /* pointer to the current loaded file */
     QDltFile *qfile;
@@ -83,7 +99,8 @@ public slots:
 
 
 public:
-    QList <unsigned long> m_searchResultList;
+    std::vector<unsigned long> m_searchResultList;
+    mutable CDecodeCacheService m_decodeCacheService;
     
 };
 
