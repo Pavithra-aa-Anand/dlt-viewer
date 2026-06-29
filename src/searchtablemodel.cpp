@@ -12,7 +12,7 @@
  * Mozilla Public License, v. 2.0. If a  copy of the MPL was not distributed with
  * this file, You can obtain one at http://mozilla.org/MPL/2.0/.
  *
- * \file searchdialog.h
+ * \file CSearchDialog.h
  * For further information see http://www.covesa.global/.
  * @licence end@
  */
@@ -25,7 +25,7 @@
 
 
 
-SearchTableModel::SearchTableModel(const QString &,QObject *parent) :
+CSearchTableModel::CSearchTableModel(const QString &,QObject *parent) :
     QAbstractTableModel(parent)
 {
     qfile = NULL;
@@ -33,7 +33,7 @@ SearchTableModel::SearchTableModel(const QString &,QObject *parent) :
     pluginManager = NULL;
 }
 
-SearchTableModel::~SearchTableModel()
+CSearchTableModel::~CSearchTableModel()
 {
 
 }
@@ -183,6 +183,7 @@ bool SearchTableModel::getDecodedMsg(int row, unsigned long messageIndex, QDltMs
 }
 
 QVariant SearchTableModel::data(const QModelIndex &index, int role) const
+QVariant CSearchTableModel::data(const QModelIndex &index, int role) const
 {
     QDltMsg msg;
 
@@ -261,7 +262,7 @@ QVariant SearchTableModel::data(const QModelIndex &index, int role) const
     return QVariant();
 }
 
-QVariant SearchTableModel::headerData(int section, Qt::Orientation orientation,
+QVariant CSearchTableModel::headerData(int section, Qt::Orientation orientation,
                                int role) const
 {
    if (orientation == Qt::Horizontal)
@@ -288,13 +289,15 @@ QVariant SearchTableModel::headerData(int section, Qt::Orientation orientation,
    return QVariant();
 }
 
-int SearchTableModel::rowCount(const QModelIndex & /*parent*/) const
+int CSearchTableModel::rowCount(const QModelIndex & /*parent*/) const
 {
     return get_SearchResultListSize();
 }
 
 void SearchTableModel::modelChanged()
 {
+void CSearchTableModel::modelChanged()
+{    
     if (!m_searchResultList.isEmpty())
     {
         index(0, 1);
@@ -308,12 +311,12 @@ void SearchTableModel::modelChanged()
     emit(layoutChanged());
 }
 
-int SearchTableModel::columnCount(const QModelIndex & /*parent*/) const
+int CSearchTableModel::columnCount(const QModelIndex & /*parent*/) const
 {
     return DLT_VIEWER_SEARCHCOLUMN_COUNT+project->settings->showArguments;
 }
 
-void SearchTableModel::clear_SearchResults()
+void CSearchTableModel::clear_SearchResults()
 {
     beginResetModel();
     m_searchResultList.clear();
@@ -321,7 +324,7 @@ void SearchTableModel::clear_SearchResults()
     endResetModel();
 }
 
-void SearchTableModel::add_SearchResultEntry(unsigned long entry)
+void CSearchTableModel::add_SearchResultEntry(unsigned long entry)
 {
     const int row = m_searchResultList.size();
     beginInsertRows(QModelIndex(), row, row);
@@ -343,7 +346,7 @@ void SearchTableModel::add_SearchResultEntries(const QList<unsigned long>& entri
 }
 
 
-bool SearchTableModel::get_SearchResultEntry(int position, unsigned long &entry)
+bool CSearchTableModel::get_SearchResultEntry(int position, unsigned long &entry)
 {
     if (position > m_searchResultList.size() || 0 > position )
     {
@@ -355,12 +358,13 @@ bool SearchTableModel::get_SearchResultEntry(int position, unsigned long &entry)
 }
 
 
-int SearchTableModel::get_SearchResultListSize() const
+int CSearchTableModel::get_SearchResultListSize() const
 {
     return m_searchResultList.size();
 }
 
 QColor SearchTableModel::getMsgBackgroundColor(const QDltMsg &msg) const
+QColor CSearchTableModel::getMsgBackgroundColor(QDltMsg &msg) const
 {
     /* get check marker color */
     QColor color = qfile->checkMarker(msg);

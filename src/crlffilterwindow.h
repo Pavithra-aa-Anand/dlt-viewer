@@ -88,6 +88,32 @@ private:
     bool rebuildScheduled;
     bool rebuildInProgress;
     bool lastBuildCanceled;
+    
+    ProjectionTableModel* m_crlfProjectionModel;
+    QAbstractTableModel* m_sourceModelOfDLT;
+    QWidget* m_crlfWindow;
+    QTableView* m_crlfTableView;
+    QLabel* m_statusLabel;
+    QDltFile* m_dltFile;
+    QDltPluginManager* m_pluginManager;
+    CMessageStore *m_messageStore;
+    const CIndexService *m_indexService;
+    CDecodeCacheService *m_externalDecodeCacheService;
+    
+    QHash<int, bool> m_crlfCache;  // Cache which absolute positions contain CRLF (positive + negative caching)
+    QHash<int, QVariantList> m_messageDataCache;  // Cache processed message data
+    int m_lastCacheValidCount;
+    bool m_bulkCrlfIndexBuilt;
+    
+    // Debouncing mechanism to prevent frequent updates
+    QTimer* m_rebuildTimer;
+    int m_lastFilteredMessageCount;
+    bool m_rebuildScheduled;
+    bool m_rebuildInProgress;
+    mutable CDecodeCacheService m_decodeCacheService;
 };
 
 #endif // CRLFFILTERWINDOW_H
+
+
+

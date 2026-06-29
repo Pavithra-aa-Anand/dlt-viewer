@@ -13,12 +13,16 @@
 #include "sortfilterproxymodel.h"
 #include "indexrowreferencemodel.h"
 
-class filtergrouplogs : public QObject {
+class CFilterGroupLogs : public QObject {
     Q_OBJECT
 
 public:
   
   explicit filtergrouplogs(QObject* parent = nullptr);
+  //! Construct the ECU grouping helper.
+  explicit CFilterGroupLogs(QObject* parent = nullptr);
+  //! Extract unique ECU IDs from a DLT file path.
+  QStringList extractEcuIds(const QString& dltFilePath);
   // Sets the source model for DLT data
   void setSourceModel(QAbstractTableModel* model);
   // Sets the DLT file reference
@@ -60,6 +64,24 @@ public:
     void rebuildGroupedIndex(QProgressDialog *progress = nullptr);
     QVector<int> rowsForEcuSet(const QSet<QString> &ecuIds) const;
     void createOrUpdateTab(const QString &tabName, const QVector<int> &rows);
+    QAbstractTableModel* m_sourceModelOfDLT;
+    QTabWidget* m_mergedTabWidget;
+    QDltFile* dltFile;
+    QDltPluginManager* pluginManager;
+
+    QMap<QString, QWidget*> m_mergedTabs;
+    QMap<QWidget*, QStringList> m_tabToSelectedIds;
+    QMap<int, QString> m_indexOfMergedTabs;
+    QMap<QString, QTableView*> m_ecuTabViews;
+    std::map<QString, std::vector<int>> m_ecuSourceRowProjection;
+
+    QSet<QString> m_selectedEcuIdSet;
+    QStringList m_extractedEcuIds;
+
+    int m_ecuColumnIndex = 4;
 };
 
 #endif // FILTERGROUPLOGS_H
+
+
+
