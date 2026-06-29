@@ -38,7 +38,16 @@ bool DltMessageMatcher::passesPreFilters(const QDltMsg &msg) const
     if (!matchAppId(msg.getApid()) || !matchCtxId(msg.getCtid()))
         return false;
 
-    if (!matchTimestampRange(msg.getTimestamp()))
+    const bool isRegexPattern = std::holds_alternative<QRegularExpression>(pattern);
+    bool isEmptyTextPattern = false;
+    const QString *searchText = nullptr;
+    if (!isRegexPattern)
+    {
+        searchText = &std::get<QString>(pattern);
+        isEmptyTextPattern = searchText->isEmpty();
+    }
+
+    if (!matchTimestampRange(msg.getTimestamp())) {
         return false;
 
     if (m_timeRangeMs)
@@ -48,22 +57,28 @@ bool DltMessageMatcher::passesPreFilters(const QDltMsg &msg) const
             return false;
     }
 
-    return true;
-}
+    if (isEmptyTextPattern)
+        return m_headerSearchEnabled || m_payloadSearchEnabled;
 
-bool DltMessageMatcher::matchHeaderAndPayload(const QDltMsg &msg, const QString &searchText) const
-{
+    bool matchFound = false;
     if (m_headerSearchEnabled) {
         auto header = msg.toStringHeader();
-        if (m_messageIdFormat)
-            header += ' ' + QString::asprintf(m_messageIdFormat->toUtf8(), msg.getMessageId());
-        if (searchText.isEmpty() || header.contains(searchText, m_caseSensitivity))
-            return true;
+        if (m_messageIdFormatUtf8)
+            header += ' ' + QString::asprintf(m_messageIdFormatUtf8->constData(), msg.getMessageId());
+        if (isRegexPattern) {
+            matchFound = header.contains(std::get<QRegularExpression>(pattern));
+        } else {
+            matchFound = header.contains(*searchText, m_caseSensitivity);
+        }
     }
 
     if (m_payloadSearchEnabled) {
         const auto payload = msg.toStringPayload();
-        return searchText.isEmpty() || payload.contains(searchText, m_caseSensitivity);
+        if (isRegexPattern) {
+            matchFound = payload.contains(std::get<QRegularExpression>(pattern));
+        } else {
+            matchFound = payload.contains(*searchText, m_caseSensitivity);
+        }
     }
 
     return false;
