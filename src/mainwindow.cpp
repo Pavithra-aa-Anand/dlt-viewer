@@ -4910,25 +4910,10 @@ void MainWindow::read(EcuItem* ecuitem)
             ecuitem->serialcon.syncFound = 0;
          }
 
-     // If the indexer is idle, coalesce live UI refreshes so bursts of control
-     // responses or log packets do not block the socket read path.
-     if(!indexUpdateTimer.isActive())
-     {
-         indexUpdateTimer.start();
-     }
+     // If the indexer is idle, trigger an index update; updateIndex() itself
+     // coalesces overlapping requests via m_indexUpdateInFlight/m_indexUpdatePending.
+     updateIndex();
 }
-
-void MainWindow::processPendingUpdateIndex()
-{
-    if (dltIndexer->isRunning())
-    {
-        indexUpdateTimer.start();
-        return;
-    }
-
-    updateIndex();
-}
-
 
 void MainWindow::createsplitfile()
 {
@@ -5013,7 +4998,6 @@ void MainWindow::updateIndex()
     }
 
     pluginsEnabled = dltIndexer->getPluginsEnabled();
-    const quint64 generation = liveFilterGeneration;
 
     IndexThreadBatchContext batchContext;
     batchContext.pluginsEnabled = pluginsEnabled;
@@ -8716,7 +8700,6 @@ void MainWindow::searchTableRenewed()
         ui->dockWidgetSearchIndex->show();
         ui->dockWidgetSearchIndex->setWindowTitle(hits);
     }
-    m_searchtableModel->modelChanged();
 }
 
 

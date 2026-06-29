@@ -202,7 +202,7 @@ void SearchTableModel::add_SearchResultEntries(const QList<unsigned long>& entri
 
 bool SearchTableModel::get_SearchResultEntry(int position, unsigned long &entry)
 {
-    if (position > m_searchResultList.size() || 0 > position )
+    if (position < 0 || position >= m_searchResultList.size())
     {
         return false;
     }

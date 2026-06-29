@@ -335,9 +335,6 @@ private:
     void checkConnectionState();
     void read(EcuItem *ecuitem);
     void updateIndex();
-    void drawUpdatedView();
-    void syncLiveFilterWorkerConfig();
-    void resetLiveFilterGeneration();
 
     void syncCheckBoxesAndMenu();
 
@@ -476,7 +473,6 @@ private slots:
     void reloadLogFileFinishIndex();
     void reloadLogFileFinishFilter();
     void reloadLogFileFinishDefaultFilter();
-    void processPendingUpdateIndex();
     void triggerPluginsAutoload();
 
     void onTableViewSelectionChanged(const QItemSelection & selected, const QItemSelection & deselected);
@@ -696,7 +692,6 @@ public slots:
 
     void handleImportResults(const QString &);
     void handleExportResults(const QString &);
-    void onLiveFilterMatchesReady(const QVector<qint64> &indices, quint64 generation);
 
 public:
 
