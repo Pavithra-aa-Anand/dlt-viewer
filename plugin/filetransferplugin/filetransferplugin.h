@@ -17,8 +17,8 @@
  * @licence end@
  */
 
-#ifndef FILETRANSFERPLUGIN_H
-#define FILETRANSFERPLUGIN_H
+#ifndef DLTVIEWERPLUGIN_H
+#define DLTVIEWERPLUGIN_H
 
 #include <QObject>
 #include "plugininterface.h"

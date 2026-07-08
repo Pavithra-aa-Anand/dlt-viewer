@@ -7103,6 +7103,7 @@ void MainWindow::splitLogsEcuid()
         filterLogsEcuid->setMessageStore(&m_messageStore);
         filterLogsEcuid->setIndexService(&m_indexService);
         filterLogsEcuid->setDecodeCacheService(&m_decodeCacheService);
+        filterLogsEcuid->setSourceModel(sourceModel);
 
         // Get the path of the currently loaded DLT file
         QString currentFilePath = qfile.getFileName(0);
@@ -7128,9 +7129,6 @@ void MainWindow::splitLogsEcuid()
                 return;
             }
         }
-
-        // Set up all necessary references
-        filterLogsEcuid->setSourceModel(sourceModel);
         filterLogsEcuid->ecuIdTabs();
     } else {
         QMessageBox::warning(this, "Warning", "No DLT file is currently loaded.");

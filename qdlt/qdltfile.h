@@ -156,7 +156,7 @@ public:
       \param msg The message which contains the DLT message after the function returns.
       \return true if the message is valid, false if an error occurred.
     */
-    bool getMsg(int index,QDltMsg &msg);
+    bool getMsg(int index,QDltMsg &msg) const;
 
     //! Service-oriented alias for loading a decoded message at a global index.
     bool messageAt(int index, QDltMsg &msg) const;
@@ -381,10 +381,10 @@ private:
     void calculateTotalSizes();
 
   // Returns true when cache lookup/insert should be used for this access pattern.
-  bool shouldUseMessageCache(int index);
+  bool shouldUseMessageCache(int index) const;
 
   // Returns true when this index has been seen recently and is worth admitting to cache.
-  bool shouldAdmitCacheInsertLocked(int index);
+  bool shouldAdmitCacheInsertLocked(int index) const;
 
     //! Mutex to lock critical path for infile
     mutable QMutex mutexQDlt;
@@ -431,7 +431,7 @@ private:
     */
     bool sortByTimestampFlag;
 
-    QCache<int,QDltMsg> cache;
+    mutable QCache<int,QDltMsg> cache;
     bool cacheEnable;
 
     // When true, all cache reads and writes are skipped entirely.
@@ -440,14 +440,14 @@ private:
     std::atomic<bool> cacheSinglePassBypass{false};
 
     // Sequential scan detection to avoid cache churn on one-pass bulk workloads.
-    int lastRequestedMsgIndex = -1;
-    int sequentialAccessStreak = 0;
-    bool sequentialScanMode = false;
+    mutable int lastRequestedMsgIndex = -1;
+    mutable int sequentialAccessStreak = 0;
+    mutable bool sequentialScanMode = false;
 
     // Recent access window used as cache admission policy to avoid one-off insert churn.
     static constexpr int kRecentAccessWindow = 64;
-    std::array<int, kRecentAccessWindow> recentRequestedIndices{};
-    int recentRequestedWritePos = 0;
+    mutable std::array<int, kRecentAccessWindow> recentRequestedIndices{};
+    mutable int recentRequestedWritePos = 0;
 
     // Size calculation variables
     quint64 totalStorageSize = 0;

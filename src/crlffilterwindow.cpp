@@ -45,10 +45,6 @@ CrlfFilterWindow::CrlfFilterWindow(QObject* parent) : QObject(parent) {
 }
 
 void CrlfFilterWindow::invalidateCache() {
-    m_crlfCache.clear();
-    m_messageDataCache.clear();
-    m_lastCacheValidCount = -1;
-    m_bulkCrlfIndexBuilt = false;
     CDecodeCacheService *activeDecodeCache = m_externalDecodeCacheService ? m_externalDecodeCacheService : &m_decodeCacheService;
     if (m_dltFile) {
         activeDecodeCache->clearForFile(m_dltFile);
@@ -678,7 +674,10 @@ std::vector<int> CrlfFilterWindow::buildCrlfProjectionRows(QWidget *progressPare
 
         if ((sourceRow % 100) == 0) {
             buildProgress.setValue(sourceRow);
+            const bool wasRebuildInProgress = m_rebuildInProgress;
+            m_rebuildInProgress = true;
             QCoreApplication::processEvents();
+            m_rebuildInProgress = wasRebuildInProgress;
         }
     }
 
