@@ -473,6 +473,11 @@ bool QDltExporter::getMsg(unsigned long int num,QDltMsg &msg,QByteArray &buf)
         }
 
         result = messageStore.message(messageId, msg);
+        if (!result)
+        {
+            qDebug() << "Failed to read message in" << __FILE__ << __LINE__;
+            return false;
+        }
         const std::vector<char> raw = messageStore.rawMessage(messageId);
         buf = QByteArray(raw.data(), static_cast<int>(raw.size()));
         msg.setIndex(static_cast<int>(num));
@@ -487,6 +492,11 @@ bool QDltExporter::getMsg(unsigned long int num,QDltMsg &msg,QByteArray &buf)
         }
 
         result = messageStore.message(messageId, msg);
+        if (!result)
+        {
+            qDebug() << "Failed to read message in" << __FILE__ << __LINE__;
+            return false;
+        }
         const std::vector<char> raw = messageStore.rawMessage(messageId);
         buf = QByteArray(raw.data(), static_cast<int>(raw.size()));
         msg.setIndex(messageStore.globalIndexForMessageId(messageId));
@@ -502,6 +512,11 @@ bool QDltExporter::getMsg(unsigned long int num,QDltMsg &msg,QByteArray &buf)
         }
 
         result = messageStore.message(messageId, msg);
+        if (!result)
+        {
+            qDebug() << "Failed to read message in" << __FILE__ << __LINE__;
+            return false;
+        }
         const std::vector<char> raw = messageStore.rawMessage(messageId);
         buf = QByteArray(raw.data(), static_cast<int>(raw.size()));
         msg.setIndex(messageStore.globalIndexForMessageId(messageId));

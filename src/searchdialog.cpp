@@ -25,7 +25,6 @@
 #include "tablemodel.h"
 #include "messagestore.h"
 #include "indexservice.h"
-#include "qdltfileprojection.h"
 #include "decodecacheservice.h"
 
 #include <dltmessagematcher.h>
@@ -869,7 +868,7 @@ void CSearchDialog::findMessages(long int searchLine, long int searchBorder, QRe
             continue;
         }
 
-        if (foundLine(searchLine, row.messageIndex))
+        if (foundLine(searchLine, globalIndex))
             break;
         else
             continue;
@@ -879,14 +878,13 @@ void CSearchDialog::findMessages(long int searchLine, long int searchBorder, QRe
     closeSnapshotFiles(state);
 }
 
-bool SearchDialog::foundLine(long int searchLine, int messageIndex)
-bool CSearchDialog::foundLine(long int searchLine)
+bool CSearchDialog::foundLine(long int searchLine, int globalIndex)
 {
     match = true;
 
     if (searchtoIndex() == true)
     {
-        addToSearchIndex(messageIndex);
+        addToSearchIndex(globalIndex);
         emit refreshedSearchIndex();
     }
     else
@@ -995,15 +993,9 @@ void CSearchDialog::updateColorbutton()
     ui->buttonHighlightColor->setIcon(px);
 }
 
-
-void SearchDialog::addToSearchIndex(int messageIndex)
-void CSearchDialog::addToSearchIndex(long int searchLine)
+void CSearchDialog::addToSearchIndex(int globalIndex)
 {
-    //qDebug() << "Add hit line to search table" << searchLine << __LINE__;
-    CIndexService indexService;
-    const std::vector<int> filteredProjection = buildActiveFilteredProjection(file);
-    const int globalIndex = indexService.globalIndexForFilteredRow(static_cast<int>(searchLine),
-                                                                   filteredProjection);
+    //qDebug() << "Add hit global index to search table" << globalIndex << __LINE__;
     if(globalIndex >= 0)
         m_searchtablemodel->add_SearchResultEntry(globalIndex);
  }

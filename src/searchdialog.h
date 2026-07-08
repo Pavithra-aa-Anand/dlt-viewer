@@ -162,9 +162,9 @@ private:
     void setRegExp(bool regExp);
     /**
      * @brief Adds a found line to the search index.
-     * @param searchLine Line number.
+        * @param globalIndex Global message index.
      */
-    void addToSearchIndex(int messageIndex);
+        void addToSearchIndex(int globalIndex);
     /**
      * @brief Iterates through messages and finds matches.
      * @param searchLine Start line.
@@ -260,9 +260,10 @@ private:
     /**
      * @brief Handles actions when a matching line is found.
      * @param searchLine Line number.
+        * @param globalIndex Global message index.
      * @return True to break search, false to continue.
      */
-    bool foundLine(long int searchLine, int messageIndex);
+        bool foundLine(long int searchLine, int globalIndex);
     /**
      * @brief Gets the APID text.
      * @return APID as QString.

@@ -128,11 +128,6 @@ private:
     const CIndexService *m_indexService;
     CDecodeCacheService *m_externalDecodeCacheService;
     
-    QHash<int, bool> m_crlfCache;  // Cache which absolute positions contain CRLF (positive + negative caching)
-    QHash<int, QVariantList> m_messageDataCache;  // Cache processed message data
-    int m_lastCacheValidCount;
-    bool m_bulkCrlfIndexBuilt;
-    
     // Debouncing mechanism to prevent frequent updates
     QTimer* m_rebuildTimer;
     int m_lastFilteredMessageCount;

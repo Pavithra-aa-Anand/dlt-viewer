@@ -50,7 +50,7 @@ QDltFile::~QDltFile()
     clear();
 }
 
-bool QDltFile::shouldUseMessageCache(int index)
+bool QDltFile::shouldUseMessageCache(int index) const
 {
     if(lastRequestedMsgIndex < 0)
     {
@@ -83,7 +83,7 @@ bool QDltFile::shouldUseMessageCache(int index)
     return true;
 }
 
-bool QDltFile::shouldAdmitCacheInsertLocked(int index)
+bool QDltFile::shouldAdmitCacheInsertLocked(int index) const
 {
     for(const int recentIndex : recentRequestedIndices)
     {
@@ -838,7 +838,7 @@ QByteArray QDltFile::getMsgLocked(int index) const
     return buf;
 }
 
-bool QDltFile::getMsg(int index,QDltMsg &msg)
+bool QDltFile::getMsg(int index,QDltMsg &msg) const
 {
     bool result;
     QDltMsg *cacheMsg;
@@ -997,8 +997,7 @@ bool QDltFile::getMsgNoCache(int index, QDltMsg &msg, QByteArray &buffer)
 
 bool QDltFile::messageAt(int index, QDltMsg &msg) const
 {
-    // getMsg updates internal cache state, so route through a const_cast wrapper.
-    return const_cast<QDltFile*>(this)->getMsg(index, msg);
+    return getMsg(index, msg);
 }
 
 QByteArray QDltFile::messageBytesAt(int index) const
