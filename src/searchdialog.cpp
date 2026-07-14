@@ -225,9 +225,7 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
             filteredProjectionRows.push_back(globalIndex);
     }
 
-    CIndexService indexService;
-    auto filteredProjection = std::make_shared<std::vector<int>>(
-        indexService.snapshotProjection(filteredProjectionRows));
+    auto filteredProjection = std::make_shared<std::vector<int>>(std::move(filteredProjectionRows));
 
     const int total = filteredProjection->size();
     if (total <= 0)
@@ -707,9 +705,7 @@ void CSearchDialog::findMessages(long int searchLine, long int searchBorder, QRe
             filteredProjectionRows.push_back(globalIndex);
     }
 
-    CIndexService indexService;
-    const std::vector<int> filteredProjection =
-        indexService.snapshotProjection(filteredProjectionRows);
+    const std::vector<int> &filteredProjection = filteredProjectionRows;
     const int filteredSize = static_cast<int>(filteredProjection.size());
     if (filteredSize == 0)
     {

@@ -12,7 +12,7 @@ public:
     DltFileIndexerThread(DltFileIndexer *indexer, QDltFilterList *filterList, bool sortByTimeEnabled, bool sortByTimestampEnabled, QVector<qint64> *indexFilterList, QMap<DltFileIndexerKey,qint64> *indexFilterListSorted, QDltPluginManager *pluginManager, QList<QDltPlugin*> *activeViewerPlugins, QDltFile *dltFile, CDecodeCacheService *decodeCacheService, bool silentMode);
     ~DltFileIndexerThread();
     void enqueueMessage(const QSharedPointer<QDltMsg> &msg, int index);
-    void processMessage(QSharedPointer<QDltMsg> &msg, int index);
+    void processMessage(QDltMsg &msg, int index);
     void requestStop();
 
 protected:

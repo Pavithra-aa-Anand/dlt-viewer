@@ -2638,9 +2638,6 @@ void MainWindow::reloadLogFileFinishFilter()
     // updateIndex, if messages are received in between
     updateIndex();
 
-    /* Rebuild m_indexService projection snapshot after filter is applied */
-    m_indexService.snapshotProjection(buildActiveFilteredProjection(&qfile));
-
     /* Invalidate decode cache for stale decoded entries after filter change */
     m_decodeCacheService.clearForFile(&qfile);
 

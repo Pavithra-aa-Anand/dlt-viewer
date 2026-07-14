@@ -386,7 +386,7 @@ bool DltFileIndexer::indexFilter(QStringList filenames)
         return false;
     }
 
-    QSharedPointer<QDltMsg> msg;
+    QDltMsg msg;
     QDltFilterList filterList;
     quint64 ix = 0;
     unsigned int iPercent = 0;
@@ -477,12 +477,14 @@ bool DltFileIndexer::indexFilter(QStringList filenames)
     unsigned int progressCounter = 1;
     emit progress(0);
 
+    // Single-pass scan optimization: skip cache bookkeeping during full CFI traversal.
+    if(dltFile)
+        dltFile->setCacheSinglePassBypass(true);
+
     // Start reading messages
     for(ix=start;ix<end;ix++)
     {
-        msg = QSharedPointer<QDltMsg>::create(); // create new instance to be filled by getMsg(), otherwise shared pointer would be empty or pointing to last message
-
-        if(!messageStore.message(static_cast<MessageId>(ix), *msg))
+        if(!messageStore.message(static_cast<MessageId>(ix), msg))
             continue; // Skip broken messages
 
         /*if(true == useIndexerThread)
@@ -507,6 +509,9 @@ bool DltFileIndexer::indexFilter(QStringList filenames)
         // stop if requested
         if(stopFlag)
         {
+            if(dltFile)
+                dltFile->setCacheSinglePassBypass(false);
+
             /*if(useIndexerThread)
             {
                 indexerThread.requestStop();
@@ -516,6 +521,10 @@ bool DltFileIndexer::indexFilter(QStringList filenames)
             return false;
         }
     }
+
+    if(dltFile)
+        dltFile->setCacheSinglePassBypass(false);
+
     emit(progress(100));
     qDebug() << "CFI:" << 100 << "%";
     // destroy threads
