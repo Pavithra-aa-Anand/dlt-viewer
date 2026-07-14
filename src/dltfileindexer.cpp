@@ -507,6 +507,10 @@ bool DltFileIndexer::indexFilter(QStringList filenames)
     unsigned int progressCounter = 1;
     emit progress(0);
 
+    // Single-pass scan optimization: skip cache bookkeeping during full CFI traversal.
+    if(dltFile)
+        dltFile->setCacheSinglePassBypass(true);
+
     // Start reading messages
     for(ix=start;ix<end;ix++)
     {
@@ -536,6 +540,9 @@ bool DltFileIndexer::indexFilter(QStringList filenames)
         // stop if requested
         if(stopFlag)
         {
+            if(dltFile)
+                dltFile->setCacheSinglePassBypass(false);
+
             if(useIndexerThread)
             {
                 indexerThread.requestStop();
@@ -545,6 +552,10 @@ bool DltFileIndexer::indexFilter(QStringList filenames)
             return false;
         }
     }
+
+    if(dltFile)
+        dltFile->setCacheSinglePassBypass(false);
+
     emit(progress(100));
     qDebug() << "CFI:" << 100 << "%";
     // destroy threads
