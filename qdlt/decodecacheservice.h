@@ -64,13 +64,15 @@ private:
         int globalIndex;
         bool decodeEnabled;
         int triggeredByUser;
+        std::uint64_t decodePipelineGeneration;
 
         bool operator==(const CacheKey &other) const
         {
             return file == other.file
                 && globalIndex == other.globalIndex
                 && decodeEnabled == other.decodeEnabled
-                && triggeredByUser == other.triggeredByUser;
+                && triggeredByUser == other.triggeredByUser
+                && decodePipelineGeneration == other.decodePipelineGeneration;
         }
 
     };
@@ -83,7 +85,8 @@ private:
             const std::size_t h2 = std::hash<int>{}(key.globalIndex);
             const std::size_t h3 = std::hash<bool>{}(key.decodeEnabled);
             const std::size_t h4 = std::hash<int>{}(key.triggeredByUser);
-            return (((h1 * 31U) + h2) * 31U + h3) * 31U + h4;
+            const std::size_t h5 = std::hash<std::uint64_t>{}(key.decodePipelineGeneration);
+            return ((((h1 * 31U) + h2) * 31U + h3) * 31U + h4) * 31U + h5;
         }
     };
 

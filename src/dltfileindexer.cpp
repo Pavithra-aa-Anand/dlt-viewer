@@ -696,7 +696,6 @@ bool DltFileIndexer::indexDefaultFilter()
             (
                 defaultFilter,
                 pluginManager,
-                dltFile,
                 &decodeCacheService,
                 silentMode
             );

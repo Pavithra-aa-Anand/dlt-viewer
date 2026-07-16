@@ -9,6 +9,9 @@
 
 #include <QDir>
 
+#include <atomic>
+#include <cstdint>
+
 //! Manage all DLT Plugins
 /*!
   This class loads all DLT Viewer Plugins and provides access to them.
@@ -74,6 +77,11 @@ public:
     //! Decode message through enabled decoder plugins and report if handled.
     bool decodeMsgHandled(QDltMsg &msg, int triggeredByUser);
 
+    //! Return the generation identifying the current decoder pipeline state.
+    std::uint64_t decodePipelineGeneration() const noexcept;
+    //! Mark decoder order, mode, or configuration as changed.
+    void invalidateDecodePipeline() noexcept;
+
     //! Get the list of pointers to all loaded plugins
     QList<QDltPlugin*> getPlugins() const { return plugins; }
 
@@ -106,6 +114,7 @@ public:
 private:
     mutable QMutex pluginListMutex;
     mutable QMutex m_decodeStageMutex;
+    std::atomic<std::uint64_t> m_decodePipelineGeneration{1};
 
     //! Serializes the actual plugin->decodeMsg() invocation across every entry point
     //! (decodeMsg(), decodeMsgTry(), decodeMsgUsingPlugins()), since plugin instances

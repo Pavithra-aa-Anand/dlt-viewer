@@ -100,10 +100,14 @@ QStringList QDltPluginManager::loadPluginsPath(QDir &dir)
 
                     QDltPlugin* item = new QDltPlugin();
                     item->loadPlugin(plugin);
+                    item->setDecodePipelineChangedCallback([this]() {
+                        invalidateDecodePipeline();
+                    });
                     item->initMessageDecoder(this);
                     pluginListMutex.lock();
                     plugins.append(item);
                     pluginListMutex.unlock();
+                    invalidateDecodePipeline();
 
                     //project.plugin->addTopLevelItem(item);
 
@@ -181,6 +185,11 @@ bool QDltPluginManager::decodeMsgHandled(QDltMsg &msg, int triggeredByUser)
     return false;
 }
 
+std::uint64_t QDltPluginManager::decodePipelineGeneration() const noexcept
+{
+    return m_decodePipelineGeneration.load(std::memory_order_relaxed);
+}
+
 bool QDltPluginManager::decodeMsgTry(QDltMsg &msg, int triggeredByUser)
 {
     if(!pluginListMutex.tryLock())
@@ -197,6 +206,11 @@ bool QDltPluginManager::decodeMsgTry(QDltMsg &msg, int triggeredByUser)
 
     pluginListMutex.unlock();
     return true;
+}
+
+void QDltPluginManager::invalidateDecodePipeline() noexcept
+{
+    m_decodePipelineGeneration.fetch_add(1, std::memory_order_relaxed);
 }
 
 void QDltPluginManager::decodeMsgUsingPlugins(const QList<QDltPlugin*> &pluginsSnapshot, QDltMsg &msg, int triggeredByUser) const
@@ -253,6 +267,9 @@ bool QDltPluginManager::decreasePluginPriority(const QString &name)
         }
     }
 
+    if (result)
+        invalidateDecodePipeline();
+
     return result;
 }
 
@@ -274,12 +291,16 @@ bool QDltPluginManager::raisePluginPriority(const QString &name)
         }
     }
 
+    if (result)
+        invalidateDecodePipeline();
+
     return result;
 }
 
 bool QDltPluginManager::setPluginPriority(const QString& name, int prio)
 {
     bool result = false;
+    bool orderChanged = false;
 
     if(plugins.size() > 1) {
         //if prio is too large, put to the end of the list
@@ -293,12 +314,16 @@ bool QDltPluginManager::setPluginPriority(const QString& name, int prio)
                 if (prio != num) {
                     qDebug() << "Changing priority of plugin" << name << "from" << num << "to" << prio;
                     plugins.move(num, prio);
+                    orderChanged = true;
                 }
                 result = true;
                 break;
             }
         }
     }
+
+    if (orderChanged)
+        invalidateDecodePipeline();
 
     return result;
 }
