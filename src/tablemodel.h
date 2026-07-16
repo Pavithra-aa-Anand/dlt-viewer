@@ -33,7 +33,6 @@
 #include "qdltpluginmanager.h"
 #include "fieldnames.h"
 #include "decodecacheservice.h"
-#include <qdltlrucache.hpp>
 
 #include <optional>
 #include <vector>
@@ -64,8 +63,10 @@ public:
     QDltFile *qfile;
     Project *project;
     QDltPluginManager *pluginManager;
-    //! Notify attached views that the model content changed.
+    //! Notify attached views that the model content changed semantically.
     void modelChanged();
+    //! Notify attached views about a visual-only change without invalidating message caches.
+    void refreshVisualData();
     //! Notify attached views that live logging appended new rows.
     void liveDataAppended();
     //! Set marker highlight at a specific row.
@@ -85,9 +86,6 @@ private:
     int m_lastKnownRowCount;
     int m_lastKnownColumnCount;
 
-    // cache is used in data()-method to avoid decoding of the same message multiple times
-    // key is a message index in the qdltfile; message can fail to decode, in that case value is empty optional
-    mutable QDltLruCache<int, std::optional<QDltMsg>> m_cache{1};
     mutable std::vector<int> m_filteredProjectionCache;
     mutable CDecodeCacheService m_decodeCacheService;
 
@@ -98,6 +96,8 @@ private:
     QList<unsigned long int> selectedMarkerRows;
     //! Resolve model row index to global message index.
     int resolveGlobalIndexForRow(int row) const;
+    //! Clear all caches whose entries depend on the current file/filter row mapping.
+    void invalidateMessageCaches(bool clearDecodedMessages);
     //! Notify Qt views about row/column delta updates.
     void notifyModelDelta(int previousRowCount, int currentRowCount, int currentColumnCount);
     //! Compute message background color for a row.

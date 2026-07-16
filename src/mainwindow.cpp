@@ -451,9 +451,6 @@ void MainWindow::initState()
     /* Bind m_messageStore adapter to the active QDltFile */
     m_messageStore.setFile(&qfile);
 
-    /* Bind m_messageStore adapter to the active QDltFile */
-    m_messageStore.setFile(&qfile);
-
     /* initialise project configuration */
     project.ecu = ui->configWidget;
     project.filter = ui->filterWidget;

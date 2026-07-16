@@ -87,24 +87,22 @@ CTableModel::CTableModel(const QString & /*data*/, QObject *parent)
     }
 
      std::optional<QDltMsg> msg;
-     if (m_cache.exists(index.row())) {
-         msg = m_cache.get(index.row());
-     } else {
-         QDltMsg omsg;
-         const bool decodeEnabled = QDltSettingsManager::getInstance()->value("startup/pluginsEnabled", true).toBool();
-         const int triggeredByUser = !QDltOptManager::getInstance()->issilentMode();
+     QDltMsg omsg;
+     const bool decodeEnabled = QDltSettingsManager::getInstance()->value("startup/pluginsEnabled", true).toBool();
+     const int triggeredByUser = !QDltOptManager::getInstance()->issilentMode();
 
-         if (m_decodeCacheService.message(qfile,
-                                          pluginManager,
-                                          filterposindex,
-                                          decodeEnabled,
-                                          triggeredByUser,
-                                          omsg,
-                                          true)) {
-             msg = std::make_optional(omsg);
-         }
-
-         m_cache.put(index.row(), msg);
+     // CDecodeCacheService owns the complete decode identity, including file,
+     // global index, decode mode, trigger mode and plugin-pipeline generation.
+     // Keeping a second row-only cache here would bypass that identity after a
+     // plugin configuration change.
+     if (m_decodeCacheService.message(qfile,
+                                      pluginManager,
+                                      filterposindex,
+                                      decodeEnabled,
+                                      triggeredByUser,
+                                      omsg,
+                                      true)) {
+         msg = std::make_optional(omsg);
      }
 
      if (role == Qt::DisplayRole)
@@ -349,10 +347,13 @@ QVariant CTableModel::headerData(int section, Qt::Orientation orientation,
      /* last search index must be deleted because model changed */
      lastSearchIndex = -1;
 
+     // A semantic model change can replace the file or change/reorder the
+     // active filter without changing the number of rows. Row count is not a
+     // valid cache identity, so always invalidate row-dependent caches here.
+     invalidateMessageCaches(true);
+
      if (structuralInvalidation)
      {
-         m_filteredProjectionCache.clear();
-         m_decodeCacheService.clearForFile(qfile);
          beginResetModel();
          endResetModel();
      }
@@ -365,6 +366,11 @@ QVariant CTableModel::headerData(int section, Qt::Orientation orientation,
      m_lastKnownColumnCount = currentColumnCount;
  }
 
+ void CTableModel::refreshVisualData()
+ {
+     notifyModelDelta(rowCount(), rowCount(), columnCount());
+ }
+
  void CTableModel::liveDataAppended()
  {
      const int previousRowCount = (m_lastKnownRowCount < 0) ? 0 : m_lastKnownRowCount;
@@ -375,9 +381,13 @@ QVariant CTableModel::headerData(int section, Qt::Orientation orientation,
      /* last search index must be deleted because model changed */
      lastSearchIndex = -1;
 
+     // Appended rows can reorder a filtered/sorted projection. The decoded
+     // cache is keyed by global index and remains valid, but the projection
+     // snapshot must be rebuilt.
+     invalidateMessageCaches(false);
+
      if(firstModelNotification || m_lastKnownColumnCount != currentColumnCount || currentRowCount < previousRowCount)
      {
-         m_filteredProjectionCache.clear();
          m_decodeCacheService.clearForFile(qfile);
          beginResetModel();
          endResetModel();
@@ -397,6 +407,14 @@ QVariant CTableModel::headerData(int section, Qt::Orientation orientation,
      m_lastKnownRowCount = currentRowCount;
      m_lastKnownColumnCount = currentColumnCount;
  }
+
+void CTableModel::invalidateMessageCaches(bool clearDecodedMessages)
+{
+    m_filteredProjectionCache.clear();
+
+    if (clearDecodedMessages)
+        m_decodeCacheService.clearForFile(qfile);
+}
 
 void CTableModel::notifyModelDelta(int previousRowCount, int currentRowCount, int currentColumnCount)
 {

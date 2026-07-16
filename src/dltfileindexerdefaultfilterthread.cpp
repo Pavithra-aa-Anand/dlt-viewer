@@ -2,15 +2,13 @@
 
 DltFileIndexerDefaultFilterThread::DltFileIndexerDefaultFilterThread
 (
-        QDltDefaultFilter *defaultFilter,
-        QDltPluginManager *pluginManager,
-    QDltFile *dltFile,
+    QDltDefaultFilter *defaultFilter,
+    QDltPluginManager *pluginManager,
     CDecodeCacheService *decodeCacheService,
-        bool silentMode
+    bool silentMode
 )
     : defaultFilter(defaultFilter),
       pluginManager(pluginManager),
-      dltFile(dltFile),
       decodeCacheService(decodeCacheService),
       silentMode(silentMode),
       msgQueue(1024)
@@ -39,20 +37,15 @@ void DltFileIndexerDefaultFilterThread::run()
 
 void DltFileIndexerDefaultFilterThread::processMessage(QSharedPointer<QDltMsg> &msg, int index)
 {
-    /* Process all decoderplugins */
-    if (decodeCacheService && dltFile)
+    /* Decode the message already loaded by indexDefaultFilter(). The plugin
+     * manager serializes this stage, so re-reading the file through
+     * CDecodeCacheService::message() is unnecessary. */
+    if (msg && pluginManager)
     {
-        QDltMsg decoded;
-        if (decodeCacheService->message(dltFile,
-                                        pluginManager,
-                                        index,
-                                        true,
-                                        silentMode,
-                                        decoded,
-                                        true))
-        {
-            *msg = decoded;
-        }
+        if (decodeCacheService)
+            (void)decodeCacheService->decode(pluginManager, silentMode, *msg);
+        else
+            pluginManager->decodeMsg(*msg, silentMode);
     }
 
     /* run through all default filter */

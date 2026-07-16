@@ -42,7 +42,13 @@ bool CDecodeCacheService::message(const QDltFile *file,
 
     CQDltFileMessageStoreAdapter messageStore(file);
 
-    const CacheKey key{file, globalIndex, decodeEnabled, triggeredByUser};
+    const std::uint64_t decodePipelineGeneration =
+        (decodeEnabled && pluginManager) ? pluginManager->decodePipelineGeneration() : 0;
+    const CacheKey key{file,
+                       globalIndex,
+                       decodeEnabled,
+                       triggeredByUser,
+                       decodePipelineGeneration};
 
     if (useCache)
     {
@@ -50,8 +56,13 @@ bool CDecodeCacheService::message(const QDltFile *file,
         const auto it = m_cache.find(key);
         if (it != m_cache.end())
         {
-            msg = it->second;
-            return true;
+            const bool pipelineUnchanged = !decodeEnabled || !pluginManager ||
+                pluginManager->decodePipelineGeneration() == decodePipelineGeneration;
+            if (pipelineUnchanged)
+            {
+                msg = it->second;
+                return true;
+            }
         }
     }
 
@@ -62,7 +73,9 @@ bool CDecodeCacheService::message(const QDltFile *file,
     if (decodeEnabled && !decode(pluginManager, triggeredByUser, loaded))
         return false;
 
-    if (useCache)
+    const bool pipelineUnchanged = !decodeEnabled || !pluginManager ||
+        pluginManager->decodePipelineGeneration() == decodePipelineGeneration;
+    if (useCache && pipelineUnchanged)
     {
         std::lock_guard<std::mutex> locker(m_cacheLock);
         const auto it = m_cache.find(key);
