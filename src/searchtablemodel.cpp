@@ -25,7 +25,7 @@
 
 
 
-CSearchTableModel::CSearchTableModel(const QString &,QObject *parent) :
+CSearchTableModel::CSearchTableModel(QObject *parent) :
     QAbstractTableModel(parent)
 {
     qfile = NULL;
@@ -334,10 +334,14 @@ void CSearchTableModel::clear_SearchResults()
 {
     beginResetModel();
     m_searchResultList.clear();
-    m_decodeCacheService.clearForFile(qfile);
     endResetModel();
     m_lastKnownRowCount = 0;
     m_lastKnownColumnCount = columnCount();
+}
+
+void CSearchTableModel::invalidateDecodeCache()
+{
+    m_decodeCacheService.clearForFile(qfile);
 }
 
 void CSearchTableModel::add_SearchResultEntry(unsigned long entry)

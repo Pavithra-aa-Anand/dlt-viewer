@@ -778,7 +778,7 @@ void MainWindow::initSearchTable()
     m_searchDlg->pluginManager = &pluginManager;
 
     /* initialise DLT Search handling */
-    m_searchtableModel = new CSearchTableModel("Search Index Mainwindow");
+    m_searchtableModel = new CSearchTableModel();
     m_searchtableModel->qfile = &qfile;
     m_searchtableModel->project = &project;
     m_searchtableModel->pluginManager = &pluginManager;
@@ -2709,8 +2709,14 @@ void MainWindow::reloadLogFileFinishDefaultFilter()
 
 void MainWindow::reloadLogFile(bool update, bool multithreaded)
 {
+    if (m_searchDlg)
+        m_searchDlg->abortSearch();
+
     qint64 fileerrors = 0;
     const bool liveFilterRefresh = update && isLiveLoggingActive();
+
+    if (!update && m_searchDlg)
+        m_searchDlg->invalidateDecodeCache();
 
     if(liveFilterRefresh)
     {
@@ -6205,7 +6211,7 @@ void MainWindow::on_configWidget_itemSelectionChanged()
     ui->action_menuDLT_Get_Software_Version->setEnabled(ecuitem && ecuitem->connected && !appitem);
     ui->action_menuDLT_Store_Config->setEnabled(ecuitem && ecuitem->connected && !appitem);
     ui->action_menuDLT_Get_Log_Info->setEnabled(ecuitem && ecuitem->connected && !appitem);
-    ui->action_menuDLT_Set_Log_Level->setEnabled(conitem && ecuitem->connected);
+    ui->action_menuDLT_Set_Log_Level->setEnabled(conitem && ecuitem && ecuitem->connected);
     ui->action_menuDLT_Set_All_Log_Levels->setEnabled(ecuitem && ecuitem->connected && !appitem);
     ui->action_menuDLT_Reset_to_Factory_Default->setEnabled(ecuitem && ecuitem->connected && !appitem);
     ui->action_menuDLT_Send_Injection->setEnabled(ecuitem && ecuitem->connected && !appitem);
