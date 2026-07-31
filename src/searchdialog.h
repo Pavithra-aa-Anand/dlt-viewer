@@ -117,6 +117,8 @@ public:
      * @param model Pointer to CSearchTableModel.
      */
     void registerSearchTableModel(CSearchTableModel *model);
+    //! Invalidate decoded messages when the active file contents are replaced.
+    void invalidateDecodeCache();
 
     QDltFile *file{nullptr};
     QTableView *table{nullptr};
@@ -132,7 +134,7 @@ private:
     CSearchTableModel *m_searchtablemodel{nullptr};
 
     std::atomic_bool isSearchCancelled{false};
-    QFutureWatcher<int> m_findAllWatcher;
+    QFutureWatcher<std::vector<std::uint64_t>> m_findAllWatcher;
     QElapsedTimer m_findAllUiUpdateTimer;
     std::int64_t m_findAllLastUiUpdateMs{0};
     int m_findAllAddedSinceLastUiUpdate{0};
@@ -212,8 +214,6 @@ private:
     void reportProgress(int progress);
     //! Finalize UI state after async find-all completion.
     void onFindAllFinished();
-    //! Append one chunk of find-all results.
-    void appendFindAllMatchesChunk(const std::vector<std::uint64_t> &entries);
 
     //! Execute single-step find next/previous operation.
     int find();

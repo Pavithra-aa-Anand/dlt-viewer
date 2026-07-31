@@ -39,7 +39,7 @@ class CSearchTableModel : public QAbstractTableModel
     Q_OBJECT
 public:
     //! Construct the search result model.
-    explicit CSearchTableModel(const QString &data, QObject *parent = 0);
+    explicit CSearchTableModel(QObject *parent = 0);
     //! Destroy the search result model.
     ~CSearchTableModel();
 
@@ -60,6 +60,8 @@ public:
 
     //! Remove all search results.
     void clear_SearchResults();
+    //! Invalidate decoded message cache for the current file.
+    void invalidateDecodeCache();
     //! Append a single search hit.
     void add_SearchResultEntry(unsigned long entry);
     //! Append multiple search hits.

@@ -22,9 +22,8 @@
 #include "ui_searchdialog.h"
 #include "qdltplugin.h"
 #include "qdltoptmanager.h"
+#include "qdltfile.h"
 #include "tablemodel.h"
-#include "messagestore.h"
-#include "indexservice.h"
 #include "decodecacheservice.h"
 
 #include <dltmessagematcher.h>
@@ -39,13 +38,50 @@
 #include <QFile>
 #include <QHash>
 #include <QPointer>
-#include <QThreadPool>
-#include <QThread>
 #include <QDebug>
 #include <QtConcurrent/QtConcurrent>
 
 #include <cstdint>
-#include <mutex>
+
+namespace {
+
+class SearchProjectionSnapshot
+{
+public:
+    explicit SearchProjectionSnapshot(const QDltFile *file)
+        : m_fileSize(file ? file->size() : 0),
+          m_identityProjection(!file || !file->isFilter())
+    {
+        if (file && !m_identityProjection)
+            m_filteredRows = file->getIndexFilter();
+    }
+
+    int size() const
+    {
+        return m_identityProjection ? m_fileSize : m_filteredRows.size();
+    }
+
+    int globalIndexAt(int row) const
+    {
+        if (row < 0 || row >= size())
+            return -1;
+
+        const qint64 globalIndex = m_identityProjection
+            ? static_cast<qint64>(row)
+            : m_filteredRows.at(row);
+        if (globalIndex < 0 || globalIndex >= m_fileSize)
+            return -1;
+
+        return static_cast<int>(globalIndex);
+    }
+
+private:
+    int m_fileSize{0};
+    bool m_identityProjection{true};
+    QVector<qint64> m_filteredRows;
+};
+
+}
 
 namespace {
 
@@ -106,7 +142,7 @@ CSearchDialog::CSearchDialog(QWidget *parent) :
 {
     ui->setupUi(this);
 
-    connect(&m_findAllWatcher, &QFutureWatcher<int>::finished,
+    connect(&m_findAllWatcher, &QFutureWatcher<std::vector<std::uint64_t>>::finished,
             this, &CSearchDialog::onFindAllFinished);
 
     regexpCheckBox = ui->checkBoxRegExp;
@@ -198,6 +234,13 @@ void CSearchDialog::appendLineEdit(QLineEdit *lineEdit){ lineEdits.append(lineEd
 
 QString CSearchDialog::getText() { return ui->lineEditSearch->text(); }
 
+void CSearchDialog::invalidateDecodeCache()
+{
+    m_decodeCacheService.clearForFile(file);
+    if (m_searchtablemodel)
+        m_searchtablemodel->invalidateDecodeCache();
+}
+
 void CSearchDialog::abortSearch()
 {
     isSearchCancelled.store(true, std::memory_order_relaxed);
@@ -211,32 +254,6 @@ void CSearchDialog::abortSearch()
 void CSearchDialog::reportProgress(int progress)
 {
     emit searchProgressValueChanged(progress);
-}
-
-void CSearchDialog::appendFindAllMatchesChunk(const std::vector<std::uint64_t> &entries)
-{
-    if (!m_searchtablemodel)
-        return;
-
-    if (entries.empty())
-        return;
-
-    // Preserve the scan order (which matches the current filtered/sorted view).
-    // Do not sort by raw msg index; that breaks ordering when the view is sorted by time/timestamp.
-    const bool wasEmpty = (m_searchtablemodel->get_SearchResultListSize() == 0);
-    m_searchtablemodel->add_SearchResultEntries(entries);
-
-    m_findAllAddedSinceLastUiUpdate += entries.size();
-    const qint64 nowMs = m_findAllUiUpdateTimer.elapsed();
-    const bool timeToUpdate = (nowMs - m_findAllLastUiUpdateMs) >= 200;
-    const bool manyNewItems = m_findAllAddedSinceLastUiUpdate >= 2000;
-
-    if (wasEmpty || timeToUpdate || manyNewItems)
-    {
-        m_findAllLastUiUpdateMs = nowMs;
-        m_findAllAddedSinceLastUiUpdate = 0;
-        emit refreshedSearchIndex();
-    }
 }
 
 void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
@@ -257,11 +274,6 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
     }
 
     isSearchCancelled.store(false, std::memory_order_relaxed);
-
-    // Keep the user-configured QDltFile cache policy unchanged. This scan reads
-    // each projected message once and explicitly bypasses the decode cache.
-    m_decodeCacheService.clearForFile(file);
-
     m_findAllUiUpdateTimer.restart();
     m_findAllLastUiUpdateMs = 0;
     m_findAllAddedSinceLastUiUpdate = 0;
@@ -269,20 +281,11 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
     m_searchtablemodel->clear_SearchResults();
     emit refreshedSearchIndex();
 
-    CQDltFileMessageStoreAdapter messageStore(file);
-    const auto &filteredMessageIds = messageStore.snapshotFilteredMessageIds();
-    std::vector<int> filteredProjectionRows;
-    filteredProjectionRows.reserve(filteredMessageIds.size());
-    for (const MessageId messageId : filteredMessageIds)
-    {
-        const int globalIndex = messageStore.globalIndexForMessageId(messageId);
-        if (globalIndex >= 0)
-            filteredProjectionRows.push_back(globalIndex);
-    }
+    // QVector is implicitly shared: this gives workers a stable filtered view
+    // without an O(n) copy on the UI thread. Unfiltered rows use identity mapping.
+    const SearchProjectionSnapshot projection(file);
+    const int total = projection.size();
 
-    auto filteredProjection = std::make_shared<std::vector<int>>(std::move(filteredProjectionRows));
-
-    const int total = filteredProjection->size();
     if (total <= 0)
     {
         emit searchProgressChanged(false);
@@ -315,49 +318,14 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
     const QDateTime timeStart = ui->dateTimeStart->dateTime();
     const QDateTime timeEnd = ui->dateTimeEnd->dateTime();
 
-    struct Chunk {
-        int begin;
-        int end;
-    };
-
-    // When decode is needed, search and live ingestion both go through plugin decode.
-    // Use a low-priority lane with a single worker to avoid starving live logs.
-    const SearchThreadPool::Priority poolPriority = doDecode
-        ? SearchThreadPool::Priority::Background
-        : SearchThreadPool::Priority::Urgent;
-    QThreadPool* const findAllPool = SearchThreadPool::instance().pool(poolPriority);
-
-    const int configuredThreads = qMax(1, findAllPool->maxThreadCount());
-    const int maxThreads = doDecode ? 1 : configuredThreads;
-
-    // Use more chunks than threads so some chunks complete early and we can show results sooner.
-    // Keep it bounded to avoid too many tasks.
-    // Also cap chunk size so any single task doesn't run for too long.
-    const int maxChunkSize = 20000;
-    const int baseChunks = qMin(total, maxThreads * 8);
-    const int minChunksForMaxSize = (total + maxChunkSize - 1) / maxChunkSize; // ensures chunkSize <= maxChunkSize
-    const int desiredChunks = qMax(baseChunks, minChunksForMaxSize);
-    const int chunkSize = qMax(1, (total + desiredChunks - 1) / desiredChunks);
-
-    QVector<Chunk> chunks;
-    chunks.reserve((total + chunkSize - 1) / chunkSize);
-    for (int begin = 0; begin < total; begin += chunkSize)
-    {
-        const int end = qMin(total - 1, begin + chunkSize - 1);
-        chunks.push_back(Chunk{begin, end});
-    }
-
-    auto processed = std::make_shared<std::atomic<int>>(0);
+    // QDltFile access during decode is not thread-safe, so run one async scan task.
+    // This avoids lock contention and scheduler overhead from pseudo-parallel workers.
     const QPointer<CSearchDialog> dlg(this);
     QDltFile* filePtr = file;
     QDltPluginManager* pluginPtr = pluginManager;
     CDecodeCacheService* decodeCache = &m_decodeCacheService;
 
-    auto mapFn = [=](const Chunk& chunk) -> std::vector<std::uint64_t> {
-        std::vector<std::uint64_t> matches;
-        matches.reserve(qMax(0, chunk.end - chunk.begin + 1) / 16);
-        SnapshotReadState state;
-
+    auto future = QtConcurrent::run([=]() -> std::vector<std::uint64_t> {
         DltMessageMatcher matcher;
         matcher.setCaseSentivity(caseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive);
         matcher.setSearchAppId(apid);
@@ -372,14 +340,28 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
         matcher.setPayloadSearchEnabled(payloadEnabled);
 
         QDltMsg msg;
-        QByteArray buf;
+        std::vector<std::uint64_t> matches;
+        matches.reserve(qMax(1, total / 16));
 
-        for (int i = chunk.begin; i <= chunk.end; ++i)
+        for (int i = 0; i < total; ++i)
         {
             if (dlg && dlg->isSearchCancelled.load(std::memory_order_relaxed))
                 break;
 
-            const int msgIndex = filteredProjection->at(i);
+            const int done = i + 1;
+            if ((done % 2000) == 0)
+            {
+                const int progress = static_cast<int>(done * 100.0 / total);
+                if (dlg)
+                {
+                    QMetaObject::invokeMethod(dlg, [dlg, progress]() {
+                        if (dlg)
+                            dlg->reportProgress(progress);
+                    }, Qt::QueuedConnection);
+                }
+            }
+
+            const int msgIndex = projection.globalIndexAt(i);
             if (msgIndex < 0)
                 continue;
 
@@ -396,50 +378,34 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
                                       : matcher.match(msg, searchText);
             if (ok)
                 matches.push_back(static_cast<std::uint64_t>(msgIndex));
+        }
 
-            const int done = processed->fetch_add(1, std::memory_order_relaxed) + 1;
-            if ((done % 2000) == 0)
-            {
-                const int progress = static_cast<int>(done * 100.0 / total);
+        if (dlg)
+        {
+            QMetaObject::invokeMethod(dlg, [dlg]() {
                 if (dlg)
-                {
-                    QMetaObject::invokeMethod(dlg, [dlg, progress]() {
-                        if (dlg)
-                            dlg->reportProgress(progress);
-                    }, Qt::QueuedConnection);
-                }
-            }
+                    dlg->reportProgress(100);
+            }, Qt::QueuedConnection);
         }
 
         closeSnapshotFiles(state);
 
         return matches;
-    };
+    });
 
-    auto reduceFn = [dlg](int& matchCount, const std::vector<std::uint64_t> &matches) {
-        matchCount += static_cast<int>(matches.size());
-        if (dlg && !matches.empty())
-        {
-            QMetaObject::invokeMethod(dlg, [dlg, matches]() {
-                if (dlg)
-                    dlg->appendFindAllMatchesChunk(matches);
-            }, Qt::QueuedConnection);
-        }
-    };
-
-    auto future = QtConcurrent::mappedReduced<int>(
-        findAllPool,
-        chunks,
-        mapFn,
-        reduceFn,
-        0,
-        QtConcurrent::OrderedReduce | QtConcurrent::SequentialReduce);
     m_findAllWatcher.setFuture(future);
 #endif
 }
 
 void CSearchDialog::onFindAllFinished()
 {
+    std::vector<std::uint64_t> matches;
+    if (!m_findAllWatcher.isCanceled())
+        matches = m_findAllWatcher.future().result();
+
+    if (m_searchtablemodel && !matches.empty())
+        m_searchtablemodel->add_SearchResultEntries(matches);
+
     // Ensure the last batch of incremental updates is reflected.
     emit refreshedSearchIndex();
 
@@ -448,7 +414,7 @@ void CSearchDialog::onFindAllFinished()
     // Do not rebuild the model here; it was built incrementally during reduce.
     cacheSearchHistory();
 
-    match = (m_searchtablemodel && m_searchtablemodel->get_SearchResultListSize() > 0);
+    match = !matches.empty();
     const int colourResult = match ? 1 : 0;
 
     for (int i = 0; i < lineEdits.size(); ++i)
@@ -741,7 +707,6 @@ int CSearchDialog::find()
 void SearchDialog::findMessages(const std::shared_ptr<const SearchSnapshot> &snapshot, long int searchLine, long int searchBorder, QRegularExpression &searchTextRegExp)
 void CSearchDialog::findMessages(long int searchLine, long int searchBorder, QRegularExpression &searchTextRegExp)
 {
-
     QDltMsg msg;
     int ctr = 0;
     SnapshotReadState state;
@@ -754,19 +719,9 @@ void CSearchDialog::findMessages(long int searchLine, long int searchBorder, QRe
 
     m_searchtablemodel->clear_SearchResults();
 
-    CQDltFileMessageStoreAdapter messageStore(file);
-    const auto &filteredMessageIds = messageStore.snapshotFilteredMessageIds();
-    std::vector<int> filteredProjectionRows;
-    filteredProjectionRows.reserve(filteredMessageIds.size());
-    for (const MessageId messageId : filteredMessageIds)
-    {
-        const int globalIndex = messageStore.globalIndexForMessageId(messageId);
-        if (globalIndex >= 0)
-            filteredProjectionRows.push_back(globalIndex);
-    }
+    const SearchProjectionSnapshot projection(file);
+    const int filteredSize = projection.size();
 
-    const std::vector<int> &filteredProjection = filteredProjectionRows;
-    const int filteredSize = static_cast<int>(filteredProjection.size());
     if (filteredSize == 0)
     {
         return;
@@ -834,7 +789,7 @@ void CSearchDialog::findMessages(long int searchLine, long int searchBorder, QRe
             continue;
         }
 
-        const int globalIndex = filteredProjection.at(static_cast<std::size_t>(searchLine));
+        const int globalIndex = projection.globalIndexAt(static_cast<int>(searchLine));
         if(globalIndex < 0)
         {
             continue;
@@ -865,7 +820,6 @@ void CSearchDialog::findMessages(long int searchLine, long int searchBorder, QRe
     }
     while( searchBorder != searchLine );
 
-    closeSnapshotFiles(state);
 }
 
 bool CSearchDialog::foundLine(long int searchLine, int globalIndex)
