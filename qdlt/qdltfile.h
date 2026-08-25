@@ -159,7 +159,7 @@ public:
     bool getMsg(int index,QDltMsg &msg) const;
 
     //! Service-oriented alias for loading a decoded message at a global index.
-    bool messageAt(int index, QDltMsg &msg) const;
+    bool messageAt(int index, QDltMsg &msg, bool useCache = true) const;
 
     //! Get one DLT message of the DLT log file selected by index
     /*!
@@ -167,6 +167,17 @@ public:
       \return Byte array containing the complete DLT message.
     */
     QByteArray getMsg(int index) const;
+
+    //! Read one message using a caller-owned file handle.
+    /*! Allows parallel message loads using separate file handles per thread.
+     *  \param index Global message index
+     *  \param reader Caller-owned QFile for I/O. May be opened/closed/seeked by this method.
+     *              Must not be accessed concurrently from other threads.
+     *  \return Byte array containing the complete DLT message, or empty on error
+     *  \warning Thread-unsafe: reader must be thread-local or caller-synchronized.
+     *           Typical usage: each thread maintains its own QFile reader to avoid lock contention.
+     */
+    QByteArray getMsg(int index, QFile &reader);
 
     //! Service-oriented alias for loading serialized message bytes at a global index.
     QByteArray messageBytesAt(int index) const;
@@ -321,7 +332,8 @@ public:
      *  single-pass scatter iterations (e.g. filter marker counting) where every
      *  message is accessed exactly once and cache would only add alloc/evict overhead.
      *  Restore to false after the operation. **/
-    void setCacheSinglePassBypass(bool bypass);
+
+    void setCacheSinglePassBypass(bool enabled);
 
     //! Sets DLTv2 support
     /*!
@@ -437,7 +449,7 @@ private:
     // When true, all cache reads and writes are skipped entirely.
     // Use for single-pass scatter workloads where cache provides no benefit
     // but adds allocation and eviction overhead (e.g. filter marker counting).
-    std::atomic<bool> cacheSinglePassBypass{false};
+    bool cacheSinglePassBypass{false};
 
     // Sequential scan detection to avoid cache churn on one-pass bulk workloads.
     mutable int lastRequestedMsgIndex = -1;

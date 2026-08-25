@@ -39,13 +39,16 @@ public:
     CDecodeCacheService();
 
     //! Retrieve and decode a message, optionally using the cache.
+    //! @param singlePassBypass When true, skips all cache operations for one-pass workloads
+    //!        where every message is accessed exactly once and cache would only add overhead.
     bool message(const QDltFile *file,
                  QDltPluginManager *pluginManager,
                  int globalIndex,
                  bool decodeEnabled,
                  int triggeredByUser,
                  QDltMsg &msg,
-                 bool useCache = true);
+                 bool useCache = true,
+                 bool singlePassBypass = false);
 
     //! Decode an already-loaded message through plugin manager.
     bool decode(QDltPluginManager *pluginManager,

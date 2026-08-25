@@ -52,8 +52,18 @@ public:
 
     //! Return the raw serialized message payload bytes for a message id.
     virtual std::vector<char> rawMessage(MessageId messageId) const = 0;
+    
     //! Decode a message by id into QDltMsg.
-    virtual bool message(MessageId messageId, QDltMsg &msg) const = 0;
+    /*! \param messageId Stable message identifier
+     *  \param msg Output parameter for decoded message
+     *  \param useCache When true, implementations may cache decoded messages.
+     *              When false, implementations should bypass cache if possible.
+     *              Note: not all implementations respect this flag; always check
+     *              implementation documentation. Implementations should document
+     *              whether they support cache bypass.
+     *  \return true if message decoded successfully, false if message not found or decode failed
+     */
+    virtual bool message(MessageId messageId, QDltMsg &msg, bool useCache = true) const = 0;
 
     //! Return a non-owning view of all message ids currently available.
     virtual const std::vector<MessageId> &snapshotAllMessageIds() const = 0;
@@ -87,7 +97,7 @@ public:
     //! Return the raw serialized message payload bytes for a message id.
     std::vector<char> rawMessage(MessageId messageId) const override;
     //! Decode a message by id into QDltMsg.
-    bool message(MessageId messageId, QDltMsg &msg) const override;
+    bool message(MessageId messageId, QDltMsg &msg, bool useCache = true) const override;
 
     //! Return a non-owning view of all message ids currently available.
     const std::vector<MessageId> &snapshotAllMessageIds() const override;

@@ -79,13 +79,13 @@ std::vector<char> CQDltFileMessageStoreAdapter::rawMessage(MessageId messageId) 
     return std::vector<char>(data.cbegin(), data.cend());
 }
 
-bool CQDltFileMessageStoreAdapter::message(MessageId messageId, QDltMsg &msg) const
+bool CQDltFileMessageStoreAdapter::message(MessageId messageId, QDltMsg &msg, bool useCache) const
 {
     if (!contains(messageId))
         return false;
 
     const int globalIndex = static_cast<int>(messageId);
-    if (!m_file->messageAt(globalIndex, msg))
+    if (!m_file->messageAt(globalIndex, msg, useCache))
         return false;
 
     return true;

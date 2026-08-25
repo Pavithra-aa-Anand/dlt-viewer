@@ -438,14 +438,15 @@ int CTableModel::resolveGlobalIndexForRow(int row) const
         return row;
     }
     // Filter is ON
-    if (m_filteredProjectionCache.size() != qfile->sizeFilter())
+    if (m_filteredProjectionCache.size() !=
+        static_cast<std::vector<int>::size_type>(qfile->sizeFilter()))
     {
         CIndexService indexService;
         m_filteredProjectionCache =
             indexService.snapshotProjection(buildActiveFilteredProjection(qfile));
     }
 
-    if (row < m_filteredProjectionCache.size())
+    if (static_cast<std::vector<int>::size_type>(row) < m_filteredProjectionCache.size())
         return m_filteredProjectionCache.at(row);
 
     return -1;

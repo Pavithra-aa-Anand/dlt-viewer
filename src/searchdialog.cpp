@@ -35,9 +35,15 @@
 #include <QAction>
 #include <QPointer>
 #include <QDebug>
+#include <QThread>
+#include <QThreadPool>
+#include <QThreadStorage>
 #include <QtConcurrent/QtConcurrent>
 
 #include <cstdint>
+#include <limits>
+#include <mutex>
+#include <utility>
 
 namespace {
 
@@ -77,7 +83,26 @@ private:
     QVector<qint64> m_filteredRows;
 };
 
+struct SearchWorkChunk { int begin{0}; int end{0}; };
+
+struct LoadedSearchMessage
+{
+    std::uint64_t index;
+    QDltMsg message;
+};
+
+static QThreadPool &findAllThreadPool()
+{
+    static QThreadPool pool;
+    static std::once_flag configured;
+    std::call_once(configured, []() {
+        pool.setMaxThreadCount(qMax(1, qMin(4, QThread::idealThreadCount())));
+        pool.setThreadPriority(QThread::NormalPriority);
+    });
+    return pool;
 }
+
+} // namespace
 
 CSearchDialog::CSearchDialog(QWidget *parent) :
     QDialog(parent),
@@ -138,7 +163,8 @@ CSearchDialog::CSearchDialog(QWidget *parent) :
 
 CSearchDialog::~CSearchDialog()
 {
-    // Avoid use-after-free if a background Find-All search is still running.
+    // MainWindow owns file and pluginManager and aborts searches before reload.
+    // Wait here as well so worker lambdas cannot outlive this dialog or its UI state.
     if (m_findAllWatcher.isRunning())
     {
         isSearchCancelled.store(true, std::memory_order_relaxed);
@@ -255,15 +281,10 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
     const bool timeRangeEnabled = ui->radioTime->isChecked();
     const QDateTime timeStart = ui->dateTimeStart->dateTime();
     const QDateTime timeEnd = ui->dateTimeEnd->dateTime();
-
-    // QDltFile access during decode is not thread-safe, so run one async scan task.
-    // This avoids lock contention and scheduler overhead from pseudo-parallel workers.
-    const QPointer<CSearchDialog> dlg(this);
-    QDltFile* filePtr = file;
-    QDltPluginManager* pluginPtr = pluginManager;
-    CDecodeCacheService* decodeCache = &m_decodeCacheService;
-
-    auto future = QtConcurrent::run([=]() -> std::vector<std::uint64_t> {
+    const DltMessageMatcher::Pattern searchPattern = useRegExp
+        ? DltMessageMatcher::Pattern{searchTextRegExp}
+        : DltMessageMatcher::Pattern{searchText};
+    const auto createMatcher = [=]() {
         DltMessageMatcher matcher;
         matcher.setCaseSentivity(caseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive);
         matcher.setSearchAppId(apid);
@@ -276,56 +297,169 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
             matcher.setMessageIdFormat(msgIdFormat);
         matcher.setHeaderSearchEnabled(headerEnabled);
         matcher.setPayloadSearchEnabled(payloadEnabled);
+        return matcher;
+    };
 
-        QDltMsg msg;
+    // QDltFile I/O is guarded by mutexQDlt; setMsg/toStringX work on local copies —
+    // parallel workers are safe when plugin decode is not needed.
+    // Fall back to single-thread when doDecode=true (plugins are not thread-safe).
+    const QPointer<CSearchDialog> dlg(this);
+    QDltFile* filePtr = file;
+    QDltPluginManager* pluginPtr = pluginManager;
+    CDecodeCacheService* decodeCache = &m_decodeCacheService;
+    QThreadPool *findAllPool = &findAllThreadPool();
+
+    auto future = QtConcurrent::run([=]() -> std::vector<std::uint64_t> {
+        if (!doDecode)
+        {
+            // Parallel path: each worker does its own file read + parse + match.
+            const int workerCount = findAllPool->maxThreadCount();
+            const int maxChunkSize = 20000;
+            const int chunkCount = qMax(1, qMax(qMin(total, workerCount * 8),
+                                                 (total + maxChunkSize - 1) / maxChunkSize));
+            const int chunkSize  = qMax(1, (total + chunkCount - 1) / chunkCount);
+
+            QVector<SearchWorkChunk> chunks;
+            chunks.reserve(chunkCount);
+            for (int b = 0; b < total; b += chunkSize)
+                chunks.push_back({b, qMin(b + chunkSize, total)});
+
+            std::atomic<int> completedChunks{0};
+            const int nChunks = chunks.size();
+
+            auto mapChunk = [=, &completedChunks](const SearchWorkChunk &chunk) -> std::vector<std::uint64_t> {
+                QFile workerReader;
+                QDltMsg msg;
+                DltMessageMatcher matcher = createMatcher();
+                std::vector<std::uint64_t> localMatches;
+                localMatches.reserve(qMax(1, (chunk.end - chunk.begin) / 16));
+
+                for (int i = chunk.begin; i < chunk.end; ++i)
+                {
+                    if (dlg && dlg->isSearchCancelled.load(std::memory_order_relaxed))
+                        break;
+
+                    const int msgIndex = projection.globalIndexAt(i);
+                    if (msgIndex < 0)
+                        continue;
+
+                    const QByteArray messageBytes = filePtr->getMsg(msgIndex, workerReader);
+                    if (messageBytes.isEmpty())
+                        continue;
+                    if (!msg.setMsg(messageBytes))
+                        continue;
+                    msg.setIndex(msgIndex);
+
+                    if (matcher.match(msg, searchPattern))
+                        localMatches.push_back(static_cast<std::uint64_t>(msgIndex));
+                }
+
+                const int done = completedChunks.fetch_add(1, std::memory_order_relaxed) + 1;
+                const int progress = done * 99 / nChunks;
+                if (dlg)
+                    QMetaObject::invokeMethod(dlg, [dlg, progress]() {
+                        if (dlg) dlg->reportProgress(progress);
+                    }, Qt::QueuedConnection);
+
+                return localMatches;
+            };
+
+            auto reduceMatches = [](std::vector<std::uint64_t> &result,
+                                    const std::vector<std::uint64_t> &chunk) {
+                result.insert(result.end(), chunk.begin(), chunk.end());
+            };
+
+            auto matches = QtConcurrent::blockingMappedReduced<std::vector<std::uint64_t>>(
+                findAllPool, chunks, mapChunk, reduceMatches,
+                QtConcurrent::OrderedReduce | QtConcurrent::SequentialReduce);
+
+            if (dlg)
+                QMetaObject::invokeMethod(dlg, [dlg]() {
+                    if (dlg) dlg->reportProgress(100);
+                }, Qt::QueuedConnection);
+            return matches;
+        }
+
+        // File loading and parsing are parallelized, but plugin execution remains
+        // serialized because decoder instances are shared by the plugin manager.
         std::vector<std::uint64_t> matches;
         matches.reserve(qMax(1, total / 16));
+        const int workerCount = findAllPool->maxThreadCount();
+        const int maxChunkSize = 20000;
+        const int chunkCount = qMax(1, qMax(qMin(total, workerCount * 8),
+                                             (total + maxChunkSize - 1) / maxChunkSize));
+        const int chunkSize = qMax(1, (total + chunkCount - 1) / chunkCount);
+        QThreadStorage<QFile*> workerReaders;
 
-        for (int i = 0; i < total; ++i)
+        for (int begin = 0; begin < total; begin += chunkSize)
         {
-            if (dlg && dlg->isSearchCancelled.load(std::memory_order_relaxed))
-                break;
+            const int end = qMin(begin + chunkSize, total);
+            QVector<int> rows;
+            rows.reserve(end - begin);
+            for (int row = begin; row < end; ++row)
+                rows.push_back(row);
 
-            const int done = i + 1;
-            if ((done % 2000) == 0)
-            {
-                const int progress = static_cast<int>(done * 100.0 / total);
-                if (dlg)
+            auto loadMessage = [=, &workerReaders](int row) -> LoadedSearchMessage {
+                const int msgIndex = projection.globalIndexAt(row);
+                if (msgIndex < 0)
+                    return {std::numeric_limits<std::uint64_t>::max(), {}};
+
+                QFile *workerReader = workerReaders.localData();
+                if (!workerReader)
                 {
-                    QMetaObject::invokeMethod(dlg, [dlg, progress]() {
-                        if (dlg)
-                            dlg->reportProgress(progress);
-                    }, Qt::QueuedConnection);
+                    workerReader = new QFile;
+                    workerReaders.setLocalData(workerReader);
                 }
+
+                const QByteArray messageBytes = filePtr->getMsg(msgIndex, *workerReader);
+                if (messageBytes.isEmpty())
+                    return {std::numeric_limits<std::uint64_t>::max(), {}};
+
+                QDltMsg message;
+                if (!message.setMsg(messageBytes))
+                    return {std::numeric_limits<std::uint64_t>::max(), {}};
+                message.setIndex(msgIndex);
+                return {static_cast<std::uint64_t>(msgIndex), std::move(message)};
+            };
+
+            auto appendLoaded = [](std::vector<LoadedSearchMessage> &result,
+                                   const LoadedSearchMessage &loaded) {
+                if (loaded.index != std::numeric_limits<std::uint64_t>::max())
+                    result.push_back(loaded);
+            };
+
+            const auto loadedMessages = QtConcurrent::blockingMappedReduced<std::vector<LoadedSearchMessage>>(
+                findAllPool, rows, loadMessage, appendLoaded,
+                QtConcurrent::OrderedReduce | QtConcurrent::SequentialReduce);
+
+            DltMessageMatcher matcher = createMatcher();
+            for (const LoadedSearchMessage &loaded : loadedMessages)
+            {
+                if (dlg && dlg->isSearchCancelled.load(std::memory_order_relaxed))
+                    break;
+
+                QDltMsg message = loaded.message;
+                decodeCache->decode(pluginPtr, dlg ? dlg->fSilentMode : 0, message);
+                if (matcher.match(message, searchPattern))
+                    matches.push_back(loaded.index);
             }
 
-            const int msgIndex = projection.globalIndexAt(i);
-            if (msgIndex < 0)
-                continue;
+            if (dlg)
+            {
+                const int progress = qMin(99, end * 99 / total);
+                QMetaObject::invokeMethod(dlg, [dlg, progress]() {
+                    if (dlg) dlg->reportProgress(progress);
+                }, Qt::QueuedConnection);
+            }
 
-            if (!decodeCache->message(filePtr,
-                                      pluginPtr,
-                                      msgIndex,
-                                      doDecode,
-                                      dlg ? dlg->fSilentMode : 0,
-                                      msg,
-                                      false))
-                continue;
-
-            const bool ok = useRegExp ? matcher.match(msg, searchTextRegExp)
-                                      : matcher.match(msg, searchText);
-            if (ok)
-                matches.push_back(static_cast<std::uint64_t>(msgIndex));
+            if (dlg && dlg->isSearchCancelled.load(std::memory_order_relaxed))
+                break;
         }
 
         if (dlg)
-        {
             QMetaObject::invokeMethod(dlg, [dlg]() {
-                if (dlg)
-                    dlg->reportProgress(100);
+                if (dlg) dlg->reportProgress(100);
             }, Qt::QueuedConnection);
-        }
-
         return matches;
     });
 
@@ -704,7 +838,8 @@ void CSearchDialog::findMessages(long int searchLine, long int searchBorder, QRe
             if (isSearchCancelled.load(std::memory_order_relaxed)) {
                 break;
             }
-            emit searchProgressValueChanged(static_cast<int>(ctr * 100.0 / filteredSize));
+            const int siPercent = static_cast<int>(ctr * 100.0 / filteredSize);
+            emit searchProgressValueChanged(siPercent);
         }
 
         if(searchLine < 0 || searchLine >= filteredSize)

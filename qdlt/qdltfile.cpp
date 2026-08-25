@@ -126,9 +126,10 @@ void QDltFile::resetCacheAccessPattern()
     sequentialScanMode = false;
 }
 
-void QDltFile::setCacheSinglePassBypass(bool bypass)
+void QDltFile::setCacheSinglePassBypass(bool enabled)
 {
-    cacheSinglePassBypass = bypass;
+    QMutexLocker locker(&mutexQDlt);
+    cacheSinglePassBypass = enabled;
 }
 
 void QDltFile::setDLTv2Support(bool _dltv2Support)
@@ -802,30 +803,72 @@ QByteArray QDltFile::getMsg(int index) const
     return buf;
 }
 
+QByteArray QDltFile::getMsg(int index, QFile &reader)
+{
+    if (index < 0)
+        return {};
+
+    QString fileName;
+    qint64 position = 0;
+    qint64 length = 0;
+
+    {
+        QMutexLocker locker(&mutexQDlt);
+        int localIndex = index;
+        int fileIndex = 0;
+        for (; fileIndex < files.size(); ++fileIndex)
+        {
+            if (localIndex < files[fileIndex]->indexAll.size())
+                break;
+            localIndex -= files[fileIndex]->indexAll.size();
+        }
+
+        if (fileIndex >= files.size())
+            return {};
+
+        const QDltFileItem *file = files[fileIndex];
+        if (!file->infile.isOpen())
+            return {};
+
+        position = file->indexAll[localIndex];
+        const qint64 endPosition = (localIndex + 1 < file->indexAll.size())
+            ? file->indexAll[localIndex + 1]
+            : file->infile.size();
+        length = endPosition - position;
+        fileName = file->infile.fileName();
+    }
+
+    if (length < 0)
+        return {};
+
+    if (reader.fileName() != fileName)
+    {
+        if (reader.isOpen())
+            reader.close();
+        reader.setFileName(fileName);
+        if (!reader.open(QIODevice::ReadOnly))
+        {
+            // Ensure reader is left in clean state on error
+            if (reader.isOpen())
+                reader.close();
+            return {};
+        }
+    }
+
+    if (!reader.seek(position))
+        return {};
+
+    return reader.read(length);
+}
+
 bool QDltFile::getMsg(int index,QDltMsg &msg) const
 {
     bool result;
     QDltMsg *cacheMsg;
     bool useCache = false;
 
-    // Single-pass scatter bypass: skip all cache I/O for one-pass workloads where
-    // every message is accessed once and cache alloc/evict is pure overhead.
-    if(cacheEnable && cacheSinglePassBypass)
-    {
-        QByteArray data = getMsg(index);
-        if(data.isEmpty())
-            return false;
-        bool r = msg.setMsg(data, true, dltv2Support);
-        if(!r && !dltv2Support)
-        {
-            r = msg.setMsg(data, true, true);
-        }
-        msg.setIndex(index);
-        return r;
-    }
-
     // Detect scan access patterns and avoid cache churn on sequential one-pass workloads.
-    if(cacheEnable)
+    if(cacheEnable && !cacheSinglePassBypass)
     {
         mutexQDlt.lock();
         useCache = shouldUseMessageCache(index);
@@ -855,7 +898,7 @@ bool QDltFile::getMsg(int index,QDltMsg &msg) const
     msg.setIndex(index);
 
     // store msg in cache
-    if(cacheEnable && useCache && result)
+    if(cacheEnable && !cacheSinglePassBypass && useCache && result)
     {
         mutexQDlt.lock();
         const bool admitInsert = shouldAdmitCacheInsertLocked(index);
@@ -875,9 +918,20 @@ bool QDltFile::getMsg(int index,QDltMsg &msg) const
     return result;
 }
 
-bool QDltFile::messageAt(int index, QDltMsg &msg) const
+bool QDltFile::messageAt(int index, QDltMsg &msg, bool useCache) const
 {
-    return getMsg(index, msg);
+    if (useCache)
+        return getMsg(index, msg);
+
+    const QByteArray data = getMsg(index);
+    if (data.isEmpty())
+        return false;
+
+    bool parsed = msg.setMsg(data, true, dltv2Support);
+    if (!parsed && !dltv2Support)
+        parsed = msg.setMsg(data, true, true);
+    msg.setIndex(index);
+    return parsed;
 }
 
 QByteArray QDltFile::messageBytesAt(int index) const

@@ -35,12 +35,26 @@ bool CDecodeCacheService::message(const QDltFile *file,
                                  bool decodeEnabled,
                                  int triggeredByUser,
                                  QDltMsg &msg,
-                                 bool useCache)
+                                 bool useCache,
+                                 bool singlePassBypass)
 {
     if (!file || globalIndex < 0 || globalIndex >= file->size())
         return false;
 
     CQDltFileMessageStoreAdapter messageStore(file);
+
+    // Single-pass scatter bypass: skip all cache I/O for one-pass workloads where
+    // every message is accessed once and cache alloc/evict is pure overhead.
+    if (singlePassBypass)
+    {
+        QDltMsg loaded;
+        if (!messageStore.message(static_cast<MessageId>(globalIndex), loaded))
+            return false;
+        if (decodeEnabled && !decode(pluginManager, triggeredByUser, loaded))
+            return false;
+        msg = loaded;
+        return true;
+    }
 
     const std::uint64_t decodePipelineGeneration =
         (decodeEnabled && pluginManager) ? pluginManager->decodePipelineGeneration() : 0;
@@ -75,6 +89,9 @@ bool CDecodeCacheService::message(const QDltFile *file,
 
     const bool pipelineUnchanged = !decodeEnabled || !pluginManager ||
         pluginManager->decodePipelineGeneration() == decodePipelineGeneration;
+    if (!pipelineUnchanged)
+        return false;
+
     if (useCache && pipelineUnchanged)
     {
         std::lock_guard<std::mutex> locker(m_cacheLock);
@@ -87,6 +104,7 @@ bool CDecodeCacheService::message(const QDltFile *file,
 
         m_cache.emplace(key, loaded);
         m_fifoOrder.push_back(key);
+        // pruneIfNeeded() relies on this lock being held for the entire eviction pass.
         pruneIfNeeded();
     }
 
@@ -101,8 +119,9 @@ bool CDecodeCacheService::decode(QDltPluginManager *pluginManager,
     if (!pluginManager)
         return true;
 
+    const std::uint64_t decodePipelineGeneration = pluginManager->decodePipelineGeneration();
     pluginManager->decodeMsg(msg, triggeredByUser);
-    return true;
+    return pluginManager->decodePipelineGeneration() == decodePipelineGeneration;
 }
 
 void CDecodeCacheService::clear()
