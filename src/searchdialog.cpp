@@ -305,6 +305,7 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
     // Fall back to single-thread when doDecode=true (plugins are not thread-safe).
     const QPointer<CSearchDialog> dlg(this);
     QDltFile* filePtr = file;
+    const bool dltv2Support = filePtr->getDLTv2Support();
     QDltPluginManager* pluginPtr = pluginManager;
     CDecodeCacheService* decodeCache = &m_decodeCacheService;
     QThreadPool *findAllPool = &findAllThreadPool();
@@ -346,7 +347,8 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
                     const QByteArray messageBytes = filePtr->getMsg(msgIndex, workerReader);
                     if (messageBytes.isEmpty())
                         continue;
-                    if (!msg.setMsg(messageBytes))
+                    if (!msg.setMsg(messageBytes, true, dltv2Support)
+                        && (dltv2Support || !msg.setMsg(messageBytes, true, true)))
                         continue;
                     msg.setIndex(msgIndex);
 
@@ -416,7 +418,8 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
                     return {std::numeric_limits<std::uint64_t>::max(), {}};
 
                 QDltMsg message;
-                if (!message.setMsg(messageBytes))
+                if (!message.setMsg(messageBytes, true, dltv2Support)
+                    && (dltv2Support || !message.setMsg(messageBytes, true, true)))
                     return {std::numeric_limits<std::uint64_t>::max(), {}};
                 message.setIndex(msgIndex);
                 return {static_cast<std::uint64_t>(msgIndex), std::move(message)};

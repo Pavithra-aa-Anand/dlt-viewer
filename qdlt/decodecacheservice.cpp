@@ -84,13 +84,11 @@ bool CDecodeCacheService::message(const QDltFile *file,
     if (!messageStore.message(static_cast<MessageId>(globalIndex), loaded))
         return false;
 
-    if (decodeEnabled && !decode(pluginManager, triggeredByUser, loaded))
-        return false;
+    if (decodeEnabled)
+        decode(pluginManager, triggeredByUser, loaded);
 
     const bool pipelineUnchanged = !decodeEnabled || !pluginManager ||
         pluginManager->decodePipelineGeneration() == decodePipelineGeneration;
-    if (!pipelineUnchanged)
-        return false;
 
     if (useCache && pipelineUnchanged)
     {
