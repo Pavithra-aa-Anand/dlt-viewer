@@ -152,10 +152,7 @@ bool QDltPluginManager::decodeMsgHandled(QDltMsg &msg, int triggeredByUser)
         }
     }
 
-    // Phase 6 contract hardening:
-    // Decoder plugins are executed in the configured priority order,
-    // one at a time, to provide deterministic behavior and avoid
-    // cross-thread re-entrancy on non-thread-safe plugin implementations.
+    // Decode plugins run serially in priority order for deterministic, thread-safe execution.
     QMutexLocker decodeStageLocker(&m_decodeStageMutex);
     for (auto* plugin : decodePlugins)
     {

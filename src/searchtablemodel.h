@@ -32,6 +32,12 @@
 
 #define DLT_VIEWER_SEARCHCOLUMN_COUNT FieldNames::Arg0
 
+/**
+ * @brief Table model containing message indexes returned by a search.
+ *
+ * Search entries are stored as global message indexes and are exposed through
+ * the model's row interface for display and activation by the viewer.
+ */
 class CSearchTableModel : public QAbstractTableModel
 {
     Q_OBJECT

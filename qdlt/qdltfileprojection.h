@@ -25,7 +25,16 @@
 
 class QDltFile;
 
-//! Generates projection from file/filter state.
+/**
+ * @brief Build the active global-index projection for a QDltFile.
+ *
+ * The result contains either all message indexes or the currently visible
+ * filtered indexes, including any active manual markers in their display order.
+ * The returned vector is independent of @p file.
+ * @param file File whose filter and sorting state should be projected.
+ * @return Global message indexes in the active view order, or an empty vector
+ *         when @p file is null or contains no indexed messages.
+ */
 QDLT_EXPORT std::vector<int> buildActiveFilteredProjection(const QDltFile *file);
 
 #endif // QDLTFILEPROJECTION_H

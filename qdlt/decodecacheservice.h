@@ -32,15 +32,31 @@
 class QDltFile;
 class QDltPluginManager;
 
+/**
+ * @brief Provides synchronized caching and plugin-based decoding of DLT messages.
+ *
+ * Cache entries are scoped by file, message index, decode settings, triggering
+ * context, and the current plugin pipeline generation. A caller can bypass the
+ * cache for one-pass workloads where retaining decoded messages is unnecessary.
+ */
 class QDLT_EXPORT CDecodeCacheService
 {
 public:
     //! Create an empty decode cache service.
     CDecodeCacheService();
 
-    //! Retrieve and decode a message, optionally using the cache.
-    //! @param singlePassBypass When true, skips all cache operations for one-pass workloads
-    //!        where every message is accessed exactly once and cache would only add overhead.
+    /**
+     * @brief Retrieve and decode a message, optionally using the cache.
+     * @param file Source file containing the message.
+     * @param pluginManager Plugin pipeline used when decoding is enabled.
+     * @param globalIndex Global message index in @p file.
+     * @param decodeEnabled Whether plugin decoding should be performed.
+     * @param triggeredByUser Decode context or triggering user identifier.
+     * @param msg Output message object.
+     * @param useCache Whether an existing cached result may be used or stored.
+     * @param singlePassBypass Skip all cache operations for a one-pass workload.
+     * @return `true` when the message was loaded and, if requested, decoded.
+     */
     bool message(const QDltFile *file,
                  QDltPluginManager *pluginManager,
                  int globalIndex,
@@ -50,7 +66,13 @@ public:
                  bool useCache = true,
                  bool singlePassBypass = false);
 
-    //! Decode an already-loaded message through plugin manager.
+    /**
+     * @brief Decode an already-loaded message through the plugin manager.
+     * @param pluginManager Plugin pipeline to execute.
+     * @param triggeredByUser Decode context or triggering user identifier.
+     * @param msg Message to decode and update.
+     * @return `true` when decoding succeeds.
+     */
     bool decode(QDltPluginManager *pluginManager,
                 int triggeredByUser,
                 QDltMsg &msg) const;

@@ -601,8 +601,7 @@ void DltFileIndexer::computeMarkerCountsFromIndex(const QDltFilterList &filterLi
     const int total = indices.size();
     const int step = qMax(1, total / 200); // throttle UI updates
 
-    // Single-pass scatter scan: each filtered message is accessed exactly once.
-    // Bypass the cache entirely to avoid alloc/evict overhead on every access.
+    // Bypass the cache because each filtered message is accessed only once.
     const QDltFile *file = messageStore.file();
     if(file)
         const_cast<QDltFile*>(file)->setCacheSinglePassBypass(true);

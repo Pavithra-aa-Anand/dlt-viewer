@@ -468,9 +468,7 @@ void CrlfFilterWindow::onSourceModelDataChanged() {
     // Reset normal timer interval
     m_rebuildTimer->setInterval(500);
     
-    // Even if the filtered count is unchanged, visible content may differ
-    // (for example, filter criteria changed but cardinality stayed constant).
-    // Rebuild to prevent stale CRLF rows.
+    // Rebuild when visible content changes even if the filtered row count is unchanged.
     const bool countChanged = (currentFilteredCount != m_lastFilteredMessageCount);
     if (!countChanged) {
         this->invalidateCache();

@@ -43,8 +43,7 @@ bool CDecodeCacheService::message(const QDltFile *file,
 
     CQDltFileMessageStoreAdapter messageStore(file);
 
-    // Single-pass scatter bypass: skip all cache I/O for one-pass workloads where
-    // every message is accessed once and cache alloc/evict is pure overhead.
+    // Single-pass scatter bypass skips cache I/O when each message is accessed only once.
     if (singlePassBypass)
     {
         QDltMsg loaded;

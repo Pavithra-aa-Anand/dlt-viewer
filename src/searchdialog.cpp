@@ -91,16 +91,17 @@ struct LoadedSearchMessage
     QDltMsg message;
 };
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 static QThreadPool &findAllThreadPool()
 {
     static QThreadPool pool;
     static std::once_flag configured;
     std::call_once(configured, []() {
         pool.setMaxThreadCount(qMax(1, qMin(4, QThread::idealThreadCount())));
-        pool.setThreadPriority(QThread::NormalPriority);
     });
     return pool;
 }
+#endif
 
 } // namespace
 
@@ -163,8 +164,7 @@ CSearchDialog::CSearchDialog(QWidget *parent) :
 
 CSearchDialog::~CSearchDialog()
 {
-    // MainWindow owns file and pluginManager and aborts searches before reload.
-    // Wait here as well so worker lambdas cannot outlive this dialog or its UI state.
+    // Wait for workers so lambdas cannot outlive this dialog or its UI state.
     if (m_findAllWatcher.isRunning())
     {
         isSearchCancelled.store(true, std::memory_order_relaxed);
@@ -248,8 +248,7 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
     m_searchtablemodel->clear_SearchResults();
     emit refreshedSearchIndex();
 
-    // QVector is implicitly shared: this gives workers a stable filtered view
-    // without an O(n) copy on the UI thread. Unfiltered rows use identity mapping.
+    // Use an implicitly shared projection so workers get a stable view without a UI-thread copy.
     const SearchProjectionSnapshot projection(file);
     const int total = projection.size();
 
@@ -382,8 +381,7 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
             return matches;
         }
 
-        // File loading and parsing are parallelized, but plugin execution remains
-        // serialized because decoder instances are shared by the plugin manager.
+        // File loading and parsing are parallel; shared decoder plugins remain serialized.
         std::vector<std::uint64_t> matches;
         matches.reserve(qMax(1, total / 16));
         const int workerCount = findAllPool->maxThreadCount();
@@ -740,12 +738,9 @@ int CSearchDialog::find()
 
     if (searchtoIndex() == true)
     {
-        // Find-All search:
-        // - Qt6+: run in parallel (QtConcurrent)
-        // - Qt5: run single-threaded (existing findMessages loop)
+        // Find-All uses QtConcurrent on Qt6 and the existing single-threaded loop on Qt5.
     #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
         // Run Find All on a worker thread so the UI stays responsive.
-        // Completion will update the model and emit searchProgressChanged(false).
         startParallelFindAll(searchTextRegExpression);
         return 1;
     #else
@@ -906,8 +901,7 @@ void CSearchDialog::findNextClicked()
 {
     setNextClicked(true);
 
-    // In "Find All" mode, work happens asynchronously.
-    // Colour is updated on completion.
+    // Find All runs asynchronously and updates colour on completion.
     if (searchtoIndex())
     {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)

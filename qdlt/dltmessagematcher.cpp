@@ -74,9 +74,7 @@ bool DltMessageMatcher::matchTimestampRange(unsigned int ts) const
     if (!m_timestampRange)
         return true;
 
-    // timestamp is displayed as floating number in UI and hence user provides timestamp ranges as floating numbers too
-    // in DltMsg stores timestamp as integer which is transformed to UI display floating number by QltMgs::toStringHeader
-    // method more or less as follows
+    // Convert the integer timestamp to the floating-point representation used by the UI.
     const auto uiTs = static_cast<double>(ts) / 10'000;
 
     return (m_timestampRange->start <= uiTs) && (uiTs <= m_timestampRange->end);

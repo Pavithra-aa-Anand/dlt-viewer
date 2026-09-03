@@ -102,10 +102,7 @@ bool QDltFile::shouldAdmitCacheInsertLocked(int index) const
 
 void QDltFile::setCacheSize(qsizetype cost)
 {
-    // Needed: QCache uses QHash internally. When setMaxCost() evicts old entries,
-    // QHash::erase() internally shifts neighboring nodes (robin-hood hashing), which
-    // invalidates any live iterator held by DltFileIndexerThread. Without this lock,
-    // background thread crashes when dereferencing stale iterator after cache size reduction.
+    // Lock cache eviction because QHash reorganization can invalidate indexer iterators.
     QMutexLocker locker(&mutexQDlt);
     if(cost==0)
     {
@@ -1047,9 +1044,7 @@ void QDltFile::setIndexFilter(QVector<qint64> _indexFilter)
 
 QVector<qint64> QDltFile::mergeIndexFilterBaseWithMarkers(const QSet<qint64> &markerSet) const
 {
-    // indexFilterBase comes from the indexer and may be sorted by time or timestamp.
-    // Do NOT assume it is sorted by message index. Preserve the base ordering and insert
-    // missing markers according to the current sort mode.
+    // Preserve the indexer's time or timestamp ordering when inserting missing markers.
 
     if(markerSet.isEmpty())
         return indexFilterBase;

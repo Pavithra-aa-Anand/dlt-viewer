@@ -99,7 +99,7 @@ private:
     //! Clear all caches whose entries depend on the current file/filter row mapping.
     void invalidateMessageCaches(bool clearDecodedMessages);
     //! Notify Qt views about row/column delta updates.
-    void notifyModelDelta(int previousRowCount, int currentRowCount, int currentColumnCount);
+    void notifyModelDelta(int currentRowCount, int currentColumnCount);
     //! Compute message background color for a row.
     QColor getMsgBackgroundColor(const std::optional<QDltMsg>& msg, int index, long int filterposindex) const;
     //! Handle tooltip and related item-view events.
