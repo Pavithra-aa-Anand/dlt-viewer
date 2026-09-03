@@ -24,6 +24,12 @@
 #include <cstddef>
 #include <vector>
 
+/**
+ * @brief Converts between view rows and global message indexes.
+ *
+ * The service operates on caller-owned projection vectors and does not retain
+ * references to them.
+ */
 class QDLT_EXPORT CIndexService
 {
 public:
@@ -32,12 +38,18 @@ public:
     //! Return the number of rows in the provided filtered projection.
     std::size_t filteredRowCount(const std::vector<int> &filteredProjection) const;
 
-    //! Map a full-view row to its global message index.
+    /**
+     * @brief Map a full-view row to its global message index.
+     * @return The mapped global index, or `-1` when @p row is invalid.
+     */
     int globalIndexForFullRow(int row, const std::vector<int> &fullProjection) const;
-    //! Map a filtered-view row to its global message index.
+    /**
+     * @brief Map a filtered-view row to its global message index.
+     * @return The mapped global index, or `-1` when @p row is invalid.
+     */
     int globalIndexForFilteredRow(int row, const std::vector<int> &filteredProjection) const;
 
-    //! Snapshot the provided projection as global indexes.
+    //! Copy the provided projection into an independent global-index snapshot.
     std::vector<int> snapshotProjection(const std::vector<int> &projection) const;
 };
 

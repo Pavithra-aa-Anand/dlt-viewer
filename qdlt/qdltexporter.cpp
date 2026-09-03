@@ -75,9 +75,7 @@ QString QDltExporter::escapeCSVValue(QString arg)
 
 QByteArray QDltExporter::createDltMessage(const QDltMsg &msg, const QString &payload)
 {
-    // Build a fresh verbose message with the same meta data
-    // (time, counter, ECU/APID/CTID, type, etc.) but with a
-    // single string argument that holds the decoded payload.
+    // Build a fresh verbose message with the original metadata and one decoded payload string.
     QDltMsg newMsg;
 
     newMsg.setEcuid(msg.getEcuid());
@@ -86,8 +84,7 @@ QByteArray QDltExporter::createDltMessage(const QDltMsg &msg, const QString &pay
     newMsg.setType(msg.getType());
     newMsg.setSubtype(msg.getSubtype());
     newMsg.setMode(QDltMsg::DltModeVerbose);
-    // Use little-endian for the newly created verbose payload so that
-    // QDltArgument::getArgument() / setArgument() stay consistent.
+    // Use little-endian encoding so QDltArgument::getArgument() and setArgument() stay consistent.
     newMsg.setEndianness(QDlt::DltEndiannessLittleEndian);
     newMsg.setTime(msg.getTime());
     newMsg.setMicroseconds(msg.getMicroseconds());
@@ -97,8 +94,7 @@ QByteArray QDltExporter::createDltMessage(const QDltMsg &msg, const QString &pay
     newMsg.setNumberOfArguments(1);
 
     QDltArgument arg;
-    // setValue() will configure the argument for a UTF-8 string and
-    // chooses little-endian encoding internally.
+    // setValue() configures the argument as a UTF-8 string with little-endian encoding.
     arg.setValue(payload, true); // UTF-8 string
     newMsg.addArgument(arg);
 
@@ -109,9 +105,7 @@ QByteArray QDltExporter::createDltMessage(const QDltMsg &msg, const QString &pay
         return QByteArray();
     }
 
-    // Now prepend a standard DLT storage header, reusing the original
-    // timestamp from the message so the exported file keeps the same
-    // time information as the source.
+    // Prepend a standard DLT storage header with the source message timestamp.
     QDltImporter::DltStorageHeaderTimestamp ts;
     ts.sec = static_cast<quint32>(msg.getTime());
     ts.usec = static_cast<quint32>(msg.getMicroseconds());
@@ -545,8 +539,7 @@ bool QDltExporter::exportMsg(unsigned long int num, QDltMsg &msg, QByteArray &bu
         }
         else
         {
-            // Non-verbose data messages: turn decoded view into a single
-            // string argument inside a new verbose DLT message
+            // Convert non-verbose decoded data into one string argument in a new verbose message.
             QString payload = msg.toStringPayload();
             payload.remove(QChar::Null);
             if(from)

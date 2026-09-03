@@ -634,9 +634,7 @@ void MainWindow::initView()
       ui->tableView->setColumnWidth(col,FieldNames::getColumnWidth((FieldNames::Fields)col,settings));
     }
 
-    // Some decoder-plugins can create very long payloads, which in turn severly impact performance
-    // So set some limit on what is displayed in the tableview. All details are always available
-    // using the message viewer-plugin
+    // Limit very long decoder payloads in the table; full details remain available in the message viewer.
     ui->tableView->horizontalHeader()->setMaximumSectionSize(5000);
 
     // set initial file explorer view
@@ -1210,6 +1208,7 @@ void MainWindow::commandLineExecutePlugin(QString name, QString cmd, QStringList
         exit(-1);
     }
 
+    // Reload the non-verbose decoder configuration after processing the command-line fibex_path option.
     if (plugin->isDecoder()
             && cmd.compare(QLatin1String("fibex_path"), Qt::CaseInsensitive) == 0)
     {
@@ -4866,8 +4865,7 @@ void MainWindow::read(EcuItem* ecuitem)
           ecuitem->ipcon.add(data);
           break;
       case EcuItem::INTERFACETYPE_UDP:
-          // Allow high-volume ECU bursts to be drained in one readyRead() cycle.
-          // The previous limit of 100 datagrams could leave a growing backlog during production ECU ingestion.
+          // Drain high-volume ECU bursts in one readyRead() cycle to avoid backlog growth.
           while(ecuitem->udpsocket.hasPendingDatagrams() && udpMessageCounter<10000)
           {
             data.resize(ecuitem->udpsocket.pendingDatagramSize());

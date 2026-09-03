@@ -32,6 +32,13 @@ class QDltFile;
 using MessageId = std::uint64_t;
 static constexpr MessageId kInvalidMessageId = (std::numeric_limits<MessageId>::max)();
 
+/**
+ * @brief Abstract source of stable message identifiers and message data.
+ *
+ * Implementations translate between stable message IDs and view-specific
+ * indexes. Returned snapshot references remain owned by the implementation and
+ * are valid only until that implementation refreshes its state.
+ */
 class QDLT_EXPORT CMessageStore
 {
 public:
@@ -71,6 +78,12 @@ public:
     virtual const std::vector<MessageId> &snapshotFilteredMessageIds() const = 0;
 };
 
+/**
+ * @brief Adapts a QDltFile to the CMessageStore interface.
+ *
+ * The adapter does not own the file. The caller must keep the bound QDltFile
+ * alive while using the adapter.
+ */
 class QDLT_EXPORT CQDltFileMessageStoreAdapter final : public CMessageStore
 {
 public:

@@ -6,6 +6,12 @@
 
 #include <vector>
 
+/**
+ * @brief Presents selected rows from a source model as a table model.
+ *
+ * Projection entries are source-row indexes. The model owns the mapping but
+ * does not own the source model.
+ */
 class ProjectionTableModel : public QAbstractTableModel
 {
     Q_OBJECT

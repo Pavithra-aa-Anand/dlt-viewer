@@ -292,10 +292,7 @@ bool QDltPlugin::decodeMsg(QDltMsg &msg, int triggeredByUser)
 {
     if(mode != ModeDisable && plugindecoderinterface)
     {
-        // Phase 6 contract hardening:
-        // Decode stage behaves transactionally for a single plugin invocation.
-        // The original message is only replaced when a plugin both matches
-        // and decodes successfully.
+        // Decode transactionally: replace the original message only after a successful match and decode.
         QDltMsg candidate = msg;
 
         if (!plugindecoderinterface->isMsg(candidate, triggeredByUser))

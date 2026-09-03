@@ -265,10 +265,7 @@ std::optional<QDltMsg> TableModel::getDecodedMsg(int row, long int filterposinde
      const bool decodeEnabled = QDltSettingsManager::getInstance()->value("startup/pluginsEnabled", true).toBool();
      const int triggeredByUser = !QDltOptManager::getInstance()->issilentMode();
 
-     // CDecodeCacheService owns the complete decode identity, including file,
-     // global index, decode mode, trigger mode and plugin-pipeline generation.
-     // Keeping a second row-only cache here would bypass that identity after a
-     // plugin configuration change.
+    // CDecodeCacheService owns the complete decode identity, including plugin-pipeline generation.
      if (m_decodeCacheService.message(qfile,
                                       pluginManager,
                                       filterposindex,
@@ -367,9 +364,7 @@ QVariant CTableModel::headerData(int section, Qt::Orientation orientation,
      /* last search index must be deleted because model changed */
      lastSearchIndex = -1;
 
-     // A semantic model change can replace the file or change/reorder the
-     // active filter without changing the number of rows. Row count is not a
-     // valid cache identity, so always invalidate row-dependent caches here.
+    // Invalidate row-dependent caches because row count alone is not a valid cache identity.
      invalidateMessageCaches(true);
 
      if (structuralInvalidation)
@@ -379,7 +374,7 @@ QVariant CTableModel::headerData(int section, Qt::Orientation orientation,
      }
      else
      {
-         notifyModelDelta(previousRowCount, currentRowCount, currentColumnCount);
+         notifyModelDelta(currentRowCount, currentColumnCount);
      }
 
      m_lastKnownRowCount = currentRowCount;
@@ -399,7 +394,7 @@ void CTableModel::appendRows(int firstRow, int lastRow)
 
  void CTableModel::refreshVisualData()
  {
-     notifyModelDelta(rowCount(), rowCount(), columnCount());
+    notifyModelDelta(rowCount(), columnCount());
  }
 
  void CTableModel::liveDataAppended()
@@ -412,9 +407,7 @@ void CTableModel::appendRows(int firstRow, int lastRow)
      /* last search index must be deleted because model changed */
      lastSearchIndex = -1;
 
-     // Appended rows can reorder a filtered/sorted projection. The decoded
-     // cache is keyed by global index and remains valid, but the projection
-     // snapshot must be rebuilt.
+    // Rebuild the projection snapshot because appended rows can reorder filtered or sorted views.
      invalidateMessageCaches(false);
 
      if(firstModelNotification || m_lastKnownColumnCount != currentColumnCount || currentRowCount < previousRowCount)
@@ -431,7 +424,7 @@ void CTableModel::appendRows(int firstRow, int lastRow)
         }
         else
         {
-            notifyModelDelta(previousRowCount, currentRowCount, currentColumnCount);
+            notifyModelDelta(currentRowCount, currentColumnCount);
         }
     }
 
@@ -447,7 +440,7 @@ void CTableModel::invalidateMessageCaches(bool clearDecodedMessages)
         m_decodeCacheService.clearForFile(qfile);
 }
 
-void CTableModel::notifyModelDelta(int previousRowCount, int currentRowCount, int currentColumnCount)
+void CTableModel::notifyModelDelta(int currentRowCount, int currentColumnCount)
 {
     if (currentRowCount > 0 && currentColumnCount > 0)
     {

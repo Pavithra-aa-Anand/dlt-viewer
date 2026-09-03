@@ -359,10 +359,7 @@ bool QDltArgument::getArgument(QByteArray &payload, bool verboseMode) const
     /* add the string or raw data size to the payload */
     if(appendSize) {
         if (isStringType) {
-            // For strings, include a terminating '\0' in the encoded data and
-            // reflect this in the length field. This matches common DLT
-            // encoder behavior and avoids off-by-one issues when decoding
-            // the last character back from a stored DLT file.
+            // Include the terminating '\0' in string data and its encoded length.
             QByteArray encoded = data;
             encoded.append('\0');
             ushort size = encoded.size();
@@ -405,9 +402,7 @@ QString QDltArgument::toString(bool binary) const
     case DltTypeInfoUnknown:
         text += QString("?");
         break;
-    // for legacy reasons dlt-viewer does not make a difference between formally ASCII-only and UTF8 strings
-    // both are handled as UTF8-encoded
-    // see https://github.com/COVESA/dlt-viewer/issues/657
+    // Treat legacy ASCII-only and UTF-8 strings alike for compatibility.
     case DltTypeInfoStrg:
     case DltTypeInfoUtf8:
         if(data.size()) {
