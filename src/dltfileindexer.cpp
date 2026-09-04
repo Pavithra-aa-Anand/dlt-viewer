@@ -5,7 +5,6 @@
 #include <QDebug>
 #include <QMessageBox>
 #include <QApplication>
-#include <QTime>
 #include <QCryptographicHash>
 #include <QMutexLocker>
 #include <QDir>
@@ -486,7 +485,6 @@ bool DltFileIndexer::indexFilter(QStringList filenames)
                 pluginManager,
                 &activeViewerPlugins,
                 dltFile,
-                &decodeCacheService,
                 silentMode
             );
 
@@ -695,7 +693,6 @@ bool DltFileIndexer::indexDefaultFilter()
             (
                 defaultFilter,
                 pluginManager,
-                &decodeCacheService,
                 silentMode
             );
 

@@ -118,13 +118,17 @@ void ProjectionTableModel::onSourceHeaderDataChanged(Qt::Orientation orientation
 
 void ProjectionTableModel::onSourceModelReset()
 {
+    // Row indices were computed against the old structure; keeping them would map to wrong/shifted rows.
     beginResetModel();
+    m_projectionRows.clear();
     endResetModel();
 }
 
 void ProjectionTableModel::onSourceLayoutChanged()
 {
+    // Row indices were computed against the old structure; keeping them would map to wrong/shifted rows.
     beginResetModel();
+    m_projectionRows.clear();
     endResetModel();
 }
 
@@ -160,6 +164,11 @@ void ProjectionTableModel::reconnectSourceSignals(QAbstractItemModel *sourceMode
             &ProjectionTableModel::onSourceModelReset);
     connect(m_sourceModel,
             &QAbstractItemModel::rowsRemoved,
+            this,
+            &ProjectionTableModel::onSourceModelReset);
+    // QPointer nulls m_sourceModel automatically, but views still need a reset notification.
+    connect(m_sourceModel,
+            &QObject::destroyed,
             this,
             &ProjectionTableModel::onSourceModelReset);
 }

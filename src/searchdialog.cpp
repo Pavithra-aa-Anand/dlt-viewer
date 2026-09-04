@@ -207,7 +207,8 @@ QString CSearchDialog::getText() { return ui->lineEditSearch->text(); }
 
 void CSearchDialog::invalidateDecodeCache()
 {
-    m_decodeCacheService.clearForFile(file);
+    if (m_decodeCacheService)
+        m_decodeCacheService->clearForFile(file);
     if (m_searchtablemodel)
         m_searchtablemodel->invalidateDecodeCache();
 }
@@ -225,6 +226,15 @@ void CSearchDialog::abortSearch()
 void CSearchDialog::reportProgress(int progress)
 {
     emit searchProgressValueChanged(progress);
+}
+
+void CSearchDialog::publishPartialMatches(const std::vector<std::uint64_t> &matches)
+{
+    if (matches.empty() || !m_searchtablemodel)
+        return;
+
+    m_searchtablemodel->add_SearchResultEntries(matches);
+    emit refreshedSearchIndex();
 }
 
 void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
@@ -313,7 +323,7 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
     QDltFile* filePtr = file;
     const bool dltv2Support = filePtr->getDLTv2Support();
     QDltPluginManager* pluginPtr = pluginManager;
-    CDecodeCacheService* decodeCache = &m_decodeCacheService;
+    CDecodeCacheService* decodeCache = m_decodeCacheService;
     QThreadPool *findAllPool = &findAllThreadPool();
 
     auto future = QtConcurrent::run([=]() -> std::vector<std::uint64_t> {
@@ -365,9 +375,18 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
                 const int done = completedChunks.fetch_add(1, std::memory_order_relaxed) + 1;
                 const int progress = done * 99 / nChunks;
                 if (dlg)
+                {
                     QMetaObject::invokeMethod(dlg, [dlg, progress]() {
                         if (dlg) dlg->reportProgress(progress);
                     }, Qt::QueuedConnection);
+                    // Show matches as each chunk completes, instead of waiting for the whole search to finish.
+                    if (!localMatches.empty())
+                    {
+                        QMetaObject::invokeMethod(dlg, [dlg, batch = localMatches]() {
+                            if (dlg) dlg->publishPartialMatches(batch);
+                        }, Qt::QueuedConnection);
+                    }
+                }
 
                 return localMatches;
             };
@@ -441,6 +460,7 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
                 QtConcurrent::OrderedReduce | QtConcurrent::SequentialReduce);
 
             DltMessageMatcher matcher = createMatcher();
+            const std::size_t matchesBeforeChunk = matches.size();
             for (const LoadedSearchMessage &loaded : loadedMessages)
             {
                 if (dlg && dlg->isSearchCancelled.load(std::memory_order_relaxed))
@@ -458,6 +478,14 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
                 QMetaObject::invokeMethod(dlg, [dlg, progress]() {
                     if (dlg) dlg->reportProgress(progress);
                 }, Qt::QueuedConnection);
+                // Show matches as each chunk completes, instead of waiting for the whole search to finish.
+                if (matches.size() > matchesBeforeChunk)
+                {
+                    std::vector<std::uint64_t> newMatches(matches.begin() + matchesBeforeChunk, matches.end());
+                    QMetaObject::invokeMethod(dlg, [dlg, newMatches]() {
+                        if (dlg) dlg->publishPartialMatches(newMatches);
+                    }, Qt::QueuedConnection);
+                }
             }
 
             if (dlg && dlg->isSearchCancelled.load(std::memory_order_relaxed))
@@ -481,8 +509,13 @@ void CSearchDialog::onFindAllFinished()
     if (!m_findAllWatcher.isCanceled())
         matches = m_findAllWatcher.future().result();
 
-    if (m_searchtablemodel && !matches.empty())
-        m_searchtablemodel->add_SearchResultEntries(matches);
+    // Replace whatever was shown incrementally with the authoritative, correctly-ordered result.
+    if (m_searchtablemodel)
+    {
+        m_searchtablemodel->clear_SearchResults();
+        if (!matches.empty())
+            m_searchtablemodel->add_SearchResultEntries(matches);
+    }
 
     // Ensure the last batch of incremental updates is reflected.
     emit refreshedSearchIndex();
@@ -871,7 +904,7 @@ void CSearchDialog::findMessages(long int searchLine, long int searchBorder, QRe
             continue;
         }
 
-        if(!m_decodeCacheService.message(file,
+        if(!m_decodeCacheService->message(file,
                                          pluginManager,
                                          globalIndex,
                                          decodeEnabled,

@@ -484,6 +484,7 @@ void MainWindow::initState()
     m_tableModel->qfile = &qfile;
     m_tableModel->project = &project;
     m_tableModel->pluginManager = &pluginManager;
+    m_tableModel->setDecodeCacheService(&m_decodeCacheService);
 
     /* Bind m_messageStore adapter to the active QDltFile */
     m_messageStore.setFile(&qfile);
@@ -811,12 +812,14 @@ void MainWindow::initSearchTable()
     m_searchDlg->file = &qfile;
     m_searchDlg->table = ui->tableView;
     m_searchDlg->pluginManager = &pluginManager;
+    m_searchDlg->setDecodeCacheService(&m_decodeCacheService);
 
     /* initialise DLT Search handling */
     m_searchtableModel = new CSearchTableModel();
     m_searchtableModel->qfile = &qfile;
     m_searchtableModel->project = &project;
     m_searchtableModel->pluginManager = &pluginManager;
+    m_searchtableModel->m_decodeCacheService = &m_decodeCacheService;
 
     /* Ensure m_messageStore adapter is pointing at the same QDltFile instance */
     m_messageStore.setFile(&qfile);
@@ -2650,6 +2653,9 @@ void MainWindow::reloadLogFileFinishIndex()
 {
     /* Repoint m_messageStore adapter to current file after index reload */
     m_messageStore.setFile(&qfile);
+
+    // modeIndex never emits finishFilter(), so clear here before the table becomes visible to avoid stale entries.
+    m_decodeCacheService.clearForFile(&qfile);
 
     // show already unfiltered messages
     m_tableModel->setForceEmpty(false);
@@ -9273,4 +9279,3 @@ void MainWindow::handleExportResults(const QString &)
     activeExporterThread = nullptr;
     statusProgressBar->hide();
 }
-

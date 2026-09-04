@@ -36,8 +36,7 @@ static constexpr MessageId kInvalidMessageId = (std::numeric_limits<MessageId>::
  * @brief Abstract source of stable message identifiers and message data.
  *
  * Implementations translate between stable message IDs and view-specific
- * indexes. Returned snapshot references remain owned by the implementation and
- * are valid only until that implementation refreshes its state.
+ * indexes. Snapshots are returned by value and independently owned by the caller.
  */
 class QDLT_EXPORT CMessageStore
 {
@@ -72,10 +71,10 @@ public:
      */
     virtual bool message(MessageId messageId, QDltMsg &msg, bool useCache = true) const = 0;
 
-    //! Return a non-owning view of all message ids currently available.
-    virtual const std::vector<MessageId> &snapshotAllMessageIds() const = 0;
-    //! Return a non-owning view of message ids currently visible in the filtered view.
-    virtual const std::vector<MessageId> &snapshotFilteredMessageIds() const = 0;
+    //! Return all message ids currently available.
+    virtual std::vector<MessageId> snapshotAllMessageIds() const = 0;
+    //! Return message ids currently visible in the filtered view.
+    virtual std::vector<MessageId> snapshotFilteredMessageIds() const = 0;
 };
 
 /**
@@ -112,15 +111,13 @@ public:
     //! Decode a message by id into QDltMsg.
     bool message(MessageId messageId, QDltMsg &msg, bool useCache = true) const override;
 
-    //! Return a non-owning view of all message ids currently available.
-    const std::vector<MessageId> &snapshotAllMessageIds() const override;
-    //! Return a non-owning view of message ids currently visible in the filtered view.
-    const std::vector<MessageId> &snapshotFilteredMessageIds() const override;
+    //! Return all message ids currently available.
+    std::vector<MessageId> snapshotAllMessageIds() const override;
+    //! Return message ids currently visible in the filtered view.
+    std::vector<MessageId> snapshotFilteredMessageIds() const override;
 
 private:
     const QDltFile *m_file;
-    mutable std::vector<MessageId> m_allMessageIdsCache;
-    mutable std::vector<MessageId> m_filteredMessageIdsCache;
 };
 
 #endif // MESSAGESTORE_H

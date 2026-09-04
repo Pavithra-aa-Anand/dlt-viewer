@@ -91,36 +91,36 @@ bool CQDltFileMessageStoreAdapter::message(MessageId messageId, QDltMsg &msg, bo
     return true;
 }
 
-const std::vector<MessageId> &CQDltFileMessageStoreAdapter::snapshotAllMessageIds() const
+std::vector<MessageId> CQDltFileMessageStoreAdapter::snapshotAllMessageIds() const
 {
-    m_allMessageIdsCache.clear();
+    std::vector<MessageId> ids;
     if (!m_file)
-        return m_allMessageIdsCache;
+        return ids;
 
     const int total = m_file->size();
-    m_allMessageIdsCache.reserve(total);
+    ids.reserve(total);
     for (int i = 0; i < total; ++i)
-        m_allMessageIdsCache.push_back(static_cast<MessageId>(i));
+        ids.push_back(static_cast<MessageId>(i));
 
-    return m_allMessageIdsCache;
+    return ids;
 }
 
-const std::vector<MessageId> &CQDltFileMessageStoreAdapter::snapshotFilteredMessageIds() const
+std::vector<MessageId> CQDltFileMessageStoreAdapter::snapshotFilteredMessageIds() const
 {
-    m_filteredMessageIdsCache.clear();
     if (!m_file)
-        return m_filteredMessageIdsCache;
+        return {};
 
     if (!m_file->isFilter())
         return snapshotAllMessageIds();
 
+    std::vector<MessageId> ids;
     const auto &filterRef = m_file->getIndexFilterRef();
-    m_filteredMessageIdsCache.reserve(filterRef.size());
+    ids.reserve(filterRef.size());
     for (const auto &index : filterRef)
     {
         if (index >= 0)
-            m_filteredMessageIdsCache.push_back(static_cast<MessageId>(index));
+            ids.push_back(static_cast<MessageId>(index));
     }
 
-    return m_filteredMessageIdsCache;
+    return ids;
 }
