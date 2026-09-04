@@ -444,12 +444,14 @@ private:
     bool sortByTimestampFlag;
 
     mutable QCache<int,QDltMsg> cache;
-    bool cacheEnable;
+    // Atomic: read without holding mutexQDlt on the getMsg() hot path.
+    std::atomic<bool> cacheEnable{false};
 
     // When true, all cache reads and writes are skipped entirely.
     // Use for single-pass scatter workloads where cache provides no benefit
     // but adds allocation and eviction overhead (e.g. filter marker counting).
-    bool cacheSinglePassBypass{false};
+    // Atomic: read without holding mutexQDlt on the getMsg() hot path.
+    std::atomic<bool> cacheSinglePassBypass{false};
 
     // Sequential scan detection to avoid cache churn on one-pass bulk workloads.
     mutable int lastRequestedMsgIndex = -1;

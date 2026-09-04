@@ -314,6 +314,9 @@ void CrlfFilterWindow::setSourceModel(QAbstractTableModel* model) {
     if (m_sourceModelOfDLT) {
         connect(m_sourceModelOfDLT, &QAbstractTableModel::modelReset, this, &CrlfFilterWindow::onSourceModelReset);
         connect(m_sourceModelOfDLT, &QAbstractTableModel::layoutChanged, this, &CrlfFilterWindow::onSourceModelDataChanged);
+        // rowsInserted/rowsRemoved don't emit modelReset/layoutChanged; without these, row-index shifts go unnoticed.
+        connect(m_sourceModelOfDLT, &QAbstractTableModel::rowsInserted, this, &CrlfFilterWindow::onSourceModelDataChanged);
+        connect(m_sourceModelOfDLT, &QAbstractTableModel::rowsRemoved, this, &CrlfFilterWindow::onSourceModelDataChanged);
         
         // Connect to parent's dltFileLoaded signal for file changes
         if (QObject* parentObj = parent()) {
@@ -595,6 +598,11 @@ void CrlfFilterWindow::refreshWindow() {
 
 // Public method to show and activate the CRLF window
 void CrlfFilterWindow::showAndActivate() {
+    // Recreate defensively if the window was torn down without going through refreshWindow().
+    if (!m_crlfWindow && m_dltFile) {
+        createCrlfWindow();
+    }
+
     if (m_crlfWindow) {
         m_crlfWindow->activateWindow();
         m_crlfWindow->raise();
@@ -635,10 +643,12 @@ std::vector<int> CrlfFilterWindow::buildCrlfProjectionRows(QWidget *progressPare
     buildProgress.setMinimumDuration(0);
     buildProgress.show();
 
+    // Detect the owning file being swapped or torn down by reentrant processEvents() calls below.
+    QDltFile * const capturedDltFile = m_dltFile;
     CDecodeCacheService *activeDecodeCache = m_externalDecodeCacheService ? m_externalDecodeCacheService : &m_decodeCacheService;
     QDltMsg msg;
     for (int sourceRow = 0; sourceRow < totalFilteredMessages; ++sourceRow) {
-        if (buildProgress.wasCanceled()) {
+        if (buildProgress.wasCanceled() || m_dltFile != capturedDltFile) {
             if (wasCancelled)
                 *wasCancelled = true;
             break;
@@ -650,7 +660,7 @@ std::vector<int> CrlfFilterWindow::buildCrlfProjectionRows(QWidget *progressPare
 
         bool gotMessage = false;
         if (activeDecodeCache) {
-            gotMessage = activeDecodeCache->message(m_dltFile,
+            gotMessage = activeDecodeCache->message(capturedDltFile,
                                                     m_pluginManager,
                                                     globalIndex,
                                                     decodeEnabled,
@@ -662,6 +672,9 @@ std::vector<int> CrlfFilterWindow::buildCrlfProjectionRows(QWidget *progressPare
         if (!gotMessage && m_messageStore) {
             const MessageId messageId = m_messageStore->messageIdForGlobalIndex(globalIndex);
             gotMessage = (messageId != kInvalidMessageId) && m_messageStore->message(messageId, msg);
+            // The message store only loads raw messages; decode explicitly to match the primary path.
+            if (gotMessage && decodeEnabled && m_pluginManager)
+                m_pluginManager->decodeMsg(msg, triggeredByUser);
         }
 
         if (!gotMessage)
@@ -676,6 +689,12 @@ std::vector<int> CrlfFilterWindow::buildCrlfProjectionRows(QWidget *progressPare
             m_rebuildInProgress = true;
             QCoreApplication::processEvents();
             m_rebuildInProgress = wasRebuildInProgress;
+
+            if (m_dltFile != capturedDltFile) {
+                if (wasCancelled)
+                    *wasCancelled = true;
+                break;
+            }
         }
     }
 

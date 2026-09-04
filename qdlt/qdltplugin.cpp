@@ -151,7 +151,8 @@ bool QDltPlugin::loadConfig(QString filename)
     if(plugininterface)
     {
         const bool result = plugininterface->loadConfig(filename);
-        notifyDecodePipelineChanged();
+        if (result)
+            notifyDecodePipelineChanged();
         return result;
     }
     else
@@ -318,7 +319,8 @@ bool QDltPlugin::command(QString cmd,QList<QString> params)
 
         // execute command
         const bool result = plugincommandinterface->command(cmd,params);
-        notifyDecodePipelineChanged();
+        if (result)
+            notifyDecodePipelineChanged();
         return result;
     }
     else

@@ -92,7 +92,7 @@ CTableModel::CTableModel(const QString & /*data*/, QObject *parent)
      const int triggeredByUser = !QDltOptManager::getInstance()->issilentMode();
 
     // CDecodeCacheService owns the complete decode identity, including plugin-pipeline generation.
-     if (m_decodeCacheService.message(qfile,
+     if (m_decodeCacheService && m_decodeCacheService->message(qfile,
                                       pluginManager,
                                       filterposindex,
                                       decodeEnabled,
@@ -381,7 +381,8 @@ QVariant CTableModel::headerData(int section, Qt::Orientation orientation,
 
      if(firstModelNotification || m_lastKnownColumnCount != currentColumnCount || currentRowCount < previousRowCount)
      {
-         m_decodeCacheService.clearForFile(qfile);
+         if (m_decodeCacheService)
+             m_decodeCacheService->clearForFile(qfile);
          beginResetModel();
          endResetModel();
      }
@@ -405,8 +406,8 @@ void CTableModel::invalidateMessageCaches(bool clearDecodedMessages)
 {
     m_filteredProjectionCache.clear();
 
-    if (clearDecodedMessages)
-        m_decodeCacheService.clearForFile(qfile);
+    if (clearDecodedMessages && m_decodeCacheService)
+        m_decodeCacheService->clearForFile(qfile);
 }
 
 void CTableModel::notifyModelDelta(int currentRowCount, int currentColumnCount)

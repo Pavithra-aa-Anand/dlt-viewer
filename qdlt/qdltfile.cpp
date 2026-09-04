@@ -125,8 +125,8 @@ void QDltFile::resetCacheAccessPattern()
 
 void QDltFile::setCacheSinglePassBypass(bool enabled)
 {
-    QMutexLocker locker(&mutexQDlt);
-    cacheSinglePassBypass = enabled;
+    // Atomic store: no lock needed, getMsg() reads this flag without holding mutexQDlt.
+    cacheSinglePassBypass.store(enabled, std::memory_order_relaxed);
 }
 
 void QDltFile::setDLTv2Support(bool _dltv2Support)
@@ -903,11 +903,8 @@ bool QDltFile::getMsg(int index,QDltMsg &msg) const
         {
             cacheMsg = new QDltMsg();
             *cacheMsg = msg;
-            if(!cache.insert(index,cacheMsg))
-            {
-                // object deleted already by insert function
-                // delete cacheMsg;
-            }
+            // QCache takes ownership; on failed insert it deletes cacheMsg itself, no cleanup needed here.
+            cache.insert(index,cacheMsg);
         }
         mutexQDlt.unlock();
     }

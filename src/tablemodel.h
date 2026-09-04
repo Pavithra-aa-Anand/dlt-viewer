@@ -78,6 +78,8 @@ public:
     void setLastSearchIndex(int idx) {this->lastSearchIndex = idx;}
     //! Return tooltip text for a given field/column.
     QString getToolTipForFields(FieldNames::Fields cn);
+    //! Inject the shared decode cache instance owned by MainWindow.
+    void setDecodeCacheService(CDecodeCacheService *service) { m_decodeCacheService = service; }
 
 private:
     long int lastSearchIndex;
@@ -87,7 +89,7 @@ private:
     int m_lastKnownColumnCount;
 
     mutable std::vector<int> m_filteredProjectionCache;
-    mutable CDecodeCacheService m_decodeCacheService;
+    CDecodeCacheService *m_decodeCacheService = nullptr;
 
     long int searchhit;
     QColor searchBackgroundColor() const;

@@ -447,6 +447,7 @@ void MainWindow::initState()
     m_tableModel->qfile = &qfile;
     m_tableModel->project = &project;
     m_tableModel->pluginManager = &pluginManager;
+    m_tableModel->setDecodeCacheService(&m_decodeCacheService);
 
     /* Bind m_messageStore adapter to the active QDltFile */
     m_messageStore.setFile(&qfile);
@@ -774,12 +775,14 @@ void MainWindow::initSearchTable()
     m_searchDlg->file = &qfile;
     m_searchDlg->table = ui->tableView;
     m_searchDlg->pluginManager = &pluginManager;
+    m_searchDlg->setDecodeCacheService(&m_decodeCacheService);
 
     /* initialise DLT Search handling */
     m_searchtableModel = new CSearchTableModel();
     m_searchtableModel->qfile = &qfile;
     m_searchtableModel->project = &project;
     m_searchtableModel->pluginManager = &pluginManager;
+    m_searchtableModel->m_decodeCacheService = &m_decodeCacheService;
 
     /* Ensure m_messageStore adapter is pointing at the same QDltFile instance */
     m_messageStore.setFile(&qfile);
@@ -1150,10 +1153,32 @@ void MainWindow::commandLineExecutePlugin(QString name, QString cmd, QStringList
 
     // Reload the non-verbose decoder configuration after processing the command-line fibex_path option.
     if (plugin->isDecoder()
-            && plugin->name() == QLatin1String("Non Verbose Mode Plugin")
             && cmd.compare(QLatin1String("fibex_path"), Qt::CaseInsensitive) == 0)
     {
-        plugin->loadConfig(QString());
+        const QString configPath = params.isEmpty() ? QString() : params.at(0);
+        // Non Verbose plugin stores the path without parsing it in command(), other decoder plugins already loaded it above.
+        if (plugin->name() == QLatin1String("Non Verbose Mode Plugin")
+                && !plugin->loadConfig(QString()))
+        {
+            QString msg("Error: ");
+            msg.append(name);
+            msg.append(plugin->error());
+            ErrorMessage(QMessageBox::Warning,name, msg);
+            exit(-1);
+        }
+
+        if (configPath.isEmpty())
+            return;
+
+        for(int num = 0; num < project.plugin->topLevelItemCount (); num++)
+        {
+            PluginItem *pluginitem = (PluginItem*)project.plugin->topLevelItem(num);
+            if(pluginitem->getPlugin() == plugin)
+            {
+                pluginitem->setFilename(configPath);
+                break;
+            }
+        }
     }
 }
 
@@ -1486,17 +1511,14 @@ bool MainWindow::openDltFile(QStringList fileNames)
     /* open existing file and append new data */
     outputfile.setFileName(fileNames.last());
     setCurrentFile(fileNames.last());
-    if( true == outputfile.open(QIODevice::WriteOnly|QIODevice::Append) )
+    // CLI mode stays read-only to avoid interfering with the indexer's Windows size query.
+    if( !QDltOptManager::getInstance()->isCommandlineMode()
+            && true == outputfile.open(QIODevice::WriteOnly|QIODevice::Append) )
     {
         openFileNames = fileNames;
         isDltFileReadOnly = false;
         //qDebug() << "Opening file(s) wo" << outputfile.fileName() << __FILE__ << __LINE__;
-        if(QDltOptManager::getInstance()->isCommandlineMode())
-            // if dlt viewer started as converter or with plugin option load file non multithreaded
-            reloadLogFile(false,false);
-        else
-            // normally load log file mutithreaded
-            reloadLogFile();
+        reloadLogFile();
         outputfile.close(); // open later again when writing
         ret = true;
     }
@@ -1520,13 +1542,13 @@ bool MainWindow::openDltFile(QStringList fileNames)
         else
         {
             if (QDltOptManager::getInstance()->issilentMode())
-              {
+            {
                 qDebug() << "Accessing logfile error" << fileNames.last() << outputfile.errorString();
-              }
+            }
             else
-              {
+            {
                 QMessageBox::critical(0, QString("DLT Viewer"), QString("Cannot open log file \"%1\"\n%2").arg(fileNames.last()).arg(outputfile.errorString()));
-              }
+            }
             ret = false;
         }
     }
@@ -2570,6 +2592,9 @@ void MainWindow::reloadLogFileFinishIndex()
 {
     /* Repoint m_messageStore adapter to current file after index reload */
     m_messageStore.setFile(&qfile);
+
+    // modeIndex never emits finishFilter(), so clear here before the table becomes visible to avoid stale entries.
+    m_decodeCacheService.clearForFile(&qfile);
 
     // show already unfiltered messages
     m_tableModel->setForceEmpty(false);
@@ -8930,4 +8955,3 @@ void MainWindow::handleExportResults(const QString &)
     activeExporterThread = nullptr;
     statusProgressBar->hide();
 }
-

@@ -14,7 +14,6 @@ DltFileIndexerThread::DltFileIndexerThread
         QDltPluginManager *pluginManager,
         QList<QDltPlugin*> *activeViewerPlugins,
     QDltFile *dltFile,
-    CDecodeCacheService *decodeCacheService,
         bool silentMode
 )
     :indexer(indexer),
@@ -26,7 +25,6 @@ DltFileIndexerThread::DltFileIndexerThread
       pluginManager(pluginManager),
       activeViewerPlugins(activeViewerPlugins),
     dltFile(dltFile),
-    decodeCacheService(decodeCacheService),
       silentMode(silentMode), msgQueue(1024)
 {
 
@@ -34,7 +32,9 @@ DltFileIndexerThread::DltFileIndexerThread
 
 DltFileIndexerThread::~DltFileIndexerThread()
 {
-
+    // Safety net: avoid destroying a still-running QThread if start() is ever enabled.
+    requestStop();
+    wait();
 }
 
 void DltFileIndexerThread::enqueueMessage(const QSharedPointer<QDltMsg> &msg, int index)

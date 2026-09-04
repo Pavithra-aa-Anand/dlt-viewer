@@ -118,6 +118,8 @@ public:
     void registerSearchTableModel(CSearchTableModel *model);
     //! Invalidate decoded messages when the active file contents are replaced.
     void invalidateDecodeCache();
+    //! Inject the shared decode cache instance owned by MainWindow.
+    void setDecodeCacheService(CDecodeCacheService *service) { m_decodeCacheService = service; }
 
     QDltFile *file{nullptr};
     QTableView *table{nullptr};
@@ -154,7 +156,7 @@ private:
     QColor highlightColor;
 
     QHash<QString, std::vector<unsigned long>> cachedHistoryKey;
-    CDecodeCacheService m_decodeCacheService;
+    CDecodeCacheService *m_decodeCacheService = nullptr;
 
     /**
      * @brief Sets the regular expression checkbox state.
@@ -211,6 +213,8 @@ private:
     void startParallelFindAll(QRegularExpression searchTextRegExp);
     //! Update find-all progress in the UI.
     void reportProgress(int progress);
+    //! Append a batch of matches found so far to the search table, live during the search.
+    void publishPartialMatches(const std::vector<std::uint64_t> &matches);
     //! Finalize UI state after async find-all completion.
     void onFindAllFinished();
 
