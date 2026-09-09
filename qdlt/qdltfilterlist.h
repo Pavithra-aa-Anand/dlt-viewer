@@ -133,12 +133,18 @@ public:
     //! Apply RegEx Replace to the string, if any active in the filters.
     /*!
     */
-    bool applyRegExString(QDltMsg &msg,QString &text);
+    bool applyRegExString(const QDltMsg &msg,QString &text);
 
     //! Apply RegEx Replace to the argumnets of a message, if any active in the filters.
     /*!
     */
     bool applyRegExStringMsg(QDltMsg &msg) const;
+
+    //! True if any enabled filter matches on decoded header/payload text (toStringHeader()/toStringPayload()).
+    /*!
+      Used to decide whether skipping decoder-plugin invocation before filtering is safe.
+    */
+    bool needsDecodedText() const;
 
 protected:
 private:

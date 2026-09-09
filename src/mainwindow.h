@@ -111,6 +111,7 @@ namespace Ui {
 
 struct EcuTree;
 class QDltExporter;
+class FilterThreadWorker;
 
 class MainWindow : public QMainWindow
 {
@@ -132,6 +133,9 @@ private:
 
     /* Timer for draw Event */
     QTimer drawTimer;
+
+    /* Timer to coalesce live-logging index/UI updates, independent of drawTimer's refresh-rate cadence */
+    QTimer indexUpdateTimer;
 
     QDltControl qcontrol;
     QFile outputfile;
@@ -242,6 +246,8 @@ private:
 
     /* dlt-file Indexer with cancel cabability */
     DltFileIndexer *dltIndexer;
+    FilterThreadWorker *liveFilterWorker;
+    quint64 liveFilterGeneration;
 
     /* Color for blinking 'Apply changes'-button */
     QColor pulseButtonColor;
@@ -336,6 +342,8 @@ private:
     void read(EcuItem *ecuitem);
     void updateIndex();
     void drawUpdatedView();
+    void syncLiveFilterWorkerConfig();
+    void resetLiveFilterGeneration();
 
     void syncCheckBoxesAndMenu();
 
@@ -436,6 +444,7 @@ private slots:
     void reloadLogFileFinishIndex();
     void reloadLogFileFinishFilter();
     void reloadLogFileFinishDefaultFilter();
+    void processPendingUpdateIndex();
     void triggerPluginsAutoload();
 
     void onTableViewSelectionChanged(const QItemSelection & selected, const QItemSelection & deselected);
@@ -650,6 +659,7 @@ public slots:
 
     void handleImportResults(const QString &);
     void handleExportResults(const QString &);
+    void onLiveFilterMatchesReady(const QVector<qint64> &indices, quint64 generation);
 
 public:
 
