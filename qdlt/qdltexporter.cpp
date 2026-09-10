@@ -33,6 +33,32 @@ QDltExporter::QDltExporter(QDltFile *from, QString outputfileName, QDltPluginMan
     this->signature = signature;
 }
 
+int QDltExporter::globalIndexForSelectionRow(unsigned long int num) const
+{
+    if (!from)
+        return -1;
+
+    if (exportSelection == QDltExporter::SelectionAll)
+        return static_cast<int>(num);
+
+    if (exportSelection == QDltExporter::SelectionFiltered)
+    {
+        const MessageId messageId = messageStore.messageIdForFilteredRow(static_cast<int>(num));
+        return (messageId == kInvalidMessageId) ? -1 : messageStore.globalIndexForMessageId(messageId);
+    }
+
+    if (exportSelection == QDltExporter::SelectionSelected)
+    {
+        if (num >= static_cast<unsigned long int>(selectedRows.size()))
+            return -1;
+
+        const MessageId messageId = messageStore.messageIdForFilteredRow(selectedRows[static_cast<int>(num)]);
+        return (messageId == kInvalidMessageId) ? -1 : messageStore.globalIndexForMessageId(messageId);
+    }
+
+    return -1;
+}
+
 void QDltExporter::run()
 {
     QString result;
@@ -442,12 +468,14 @@ bool QDltExporter::getMsg(unsigned long int num,QDltMsg &msg,QByteArray &buf)
             return false;
         }
 
-        result = messageStore.messageWithBytes(messageId, msg, buf, false);
+        result = messageStore.message(messageId, msg);
         if (!result)
         {
             qDebug() << "Failed to read message in" << __FILE__ << __LINE__;
             return false;
         }
+        const std::vector<char> raw = messageStore.rawMessage(messageId);
+        buf = QByteArray(raw.data(), static_cast<int>(raw.size()));
         msg.setIndex(static_cast<int>(num));
     }
     else if(exportSelection == QDltExporter::SelectionFiltered)
@@ -459,12 +487,14 @@ bool QDltExporter::getMsg(unsigned long int num,QDltMsg &msg,QByteArray &buf)
             return false;
         }
 
-        result = messageStore.messageWithBytes(messageId, msg, buf, false);
+        result = messageStore.message(messageId, msg);
         if (!result)
         {
             qDebug() << "Failed to read message in" << __FILE__ << __LINE__;
             return false;
         }
+        const std::vector<char> raw = messageStore.rawMessage(messageId);
+        buf = QByteArray(raw.data(), static_cast<int>(raw.size()));
         msg.setIndex(messageStore.globalIndexForMessageId(messageId));
     }
     else if(exportSelection == QDltExporter::SelectionSelected)
@@ -477,12 +507,14 @@ bool QDltExporter::getMsg(unsigned long int num,QDltMsg &msg,QByteArray &buf)
             return false;
         }
 
-        result = messageStore.messageWithBytes(messageId, msg, buf, false);
+        result = messageStore.message(messageId, msg);
         if (!result)
         {
             qDebug() << "Failed to read message in" << __FILE__ << __LINE__;
             return false;
         }
+        const std::vector<char> raw = messageStore.rawMessage(messageId);
+        buf = QByteArray(raw.data(), static_cast<int>(raw.size()));
         msg.setIndex(messageStore.globalIndexForMessageId(messageId));
     }
     else
@@ -535,9 +567,9 @@ bool QDltExporter::exportMsg(unsigned long int num, QDltMsg &msg, QByteArray &bu
             if(exportSelection == QDltExporter::SelectionAll)
                 text += QString("%1 ").arg(num);
             else if(exportSelection == QDltExporter::SelectionFiltered)
-                text += QString("%1 ").arg(msg.getIndex());
+                text += QString("%1 ").arg(globalIndexForSelectionRow(num));
             else if(exportSelection == QDltExporter::SelectionSelected)
-                text += QString("%1 ").arg(msg.getIndex());
+                text += QString("%1 ").arg(globalIndexForSelectionRow(num));
             else
                 return false;
             if( automaticTimeSettings == 0 )
@@ -581,9 +613,9 @@ bool QDltExporter::exportMsg(unsigned long int num, QDltMsg &msg, QByteArray &bu
         if(exportSelection == QDltExporter::SelectionAll)
             writeCSVLine(num, msg,to);
         else if(exportSelection == QDltExporter::SelectionFiltered)
-            writeCSVLine(msg.getIndex(), msg,to);
+            writeCSVLine(globalIndexForSelectionRow(num), msg,to);
         else if(exportSelection == QDltExporter::SelectionSelected)
-            writeCSVLine(msg.getIndex(), msg,to);
+            writeCSVLine(globalIndexForSelectionRow(num), msg,to);
         else
             return false;
     }
@@ -595,9 +627,9 @@ bool QDltExporter::exportMsg(unsigned long int num, QDltMsg &msg, QByteArray &bu
         if(exportSelection == QDltExporter::SelectionAll)
             text += QString("%1").arg(num);
         else if(exportSelection == QDltExporter::SelectionFiltered)
-            text += QString("%1").arg(msg.getIndex());
+            text += QString("%1").arg(globalIndexForSelectionRow(num));
         else if(exportSelection == QDltExporter::SelectionSelected)
-            text += QString("%1").arg(msg.getIndex());
+            text += QString("%1").arg(globalIndexForSelectionRow(num));
         else
             return false;
 
@@ -716,15 +748,12 @@ void QDltExporter::exportMessages()
                 const bool decodeEnabled = true;
                 const int index = msg.getIndex();
                 const bool hasGlobalIndex = (from != nullptr) && index >= 0;
-                // Export is a strict single forward pass; no message is ever revisited,
-                // so bypass the shared cache's locking/bookkeeping entirely (see finding 3.8).
                 if (hasGlobalIndex && decodeCacheService.message(from,
                                                                  pluginManager,
                                                                  index,
                                                                  decodeEnabled,
                                                                  silentMode,
                                                                  decoded,
-                                                                 true,
                                                                  true))
                 {
                     msg = decoded;
