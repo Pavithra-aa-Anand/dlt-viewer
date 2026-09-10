@@ -68,7 +68,7 @@ TEST(QDltFile, concurrentCallerOwnedReadersMatchSerialReads)
         EXPECT_EQ(reads[indexValue].get(), expected[indexValue]);
 }
 
-TEST(MessageStore, rejectsInvalidGlobalIndexes)
+TEST(MessageStore, resolvesRawMessagesAndRejectsInvalidIds)
 {
     QTemporaryFile source;
     ASSERT_TRUE(source.open());
@@ -83,6 +83,9 @@ TEST(MessageStore, rejectsInvalidGlobalIndexes)
     file.setDltIndex(index);
 
     CQDltFileMessageStoreAdapter store(&file);
+    EXPECT_EQ(store.rawMessage(store.messageIdForGlobalIndex(1)),
+              std::vector<char>({'-', 's', 'e', 'c', 'o', 'n', 'd'}));
     EXPECT_EQ(store.messageIdForGlobalIndex(-1), kInvalidMessageId);
     EXPECT_EQ(store.messageIdForGlobalIndex(2), kInvalidMessageId);
+    EXPECT_TRUE(store.rawMessage(kInvalidMessageId).empty());
 }
