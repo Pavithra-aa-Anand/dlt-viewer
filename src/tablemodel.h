@@ -92,15 +92,6 @@ private:
     mutable std::vector<int> m_filteredProjectionCache;
     CDecodeCacheService *m_decodeCacheService = nullptr;
 
-    // One-entry last-row cache: avoids re-entering the shared, mutex-protected
-    // decode cache once per role/column Qt requests for the same row/paint pass.
-    mutable bool m_lastRowCacheValid = false;
-    mutable int m_lastRowCacheGlobalIndex = -1;
-    mutable bool m_lastRowCacheDecodeEnabled = false;
-    mutable int m_lastRowCacheTriggeredByUser = 0;
-    mutable std::uint64_t m_lastRowCachePipelineGeneration = 0;
-    mutable QDltMsg m_lastRowCacheMsg;
-
     long int searchhit;
     QColor searchBackgroundColor() const;
     QColor searchhit_higlightColor;
