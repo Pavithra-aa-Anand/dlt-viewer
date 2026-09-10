@@ -29,7 +29,7 @@ CDecodeCacheService::CDecodeCacheService()
     m_cache.reserve(static_cast<std::size_t>(kMaxEntries));
 }
 
-bool CDecodeCacheService::message(QDltFile *file,
+bool CDecodeCacheService::message(const QDltFile *file,
                                  QDltPluginManager *pluginManager,
                                  int globalIndex,
                                  bool decodeEnabled,
@@ -47,7 +47,7 @@ bool CDecodeCacheService::message(QDltFile *file,
     if (singlePassBypass)
     {
         QDltMsg loaded;
-        if (!messageStore.message(static_cast<MessageId>(globalIndex), loaded, false))
+        if (!messageStore.message(static_cast<MessageId>(globalIndex), loaded))
             return false;
         if (decodeEnabled && !decode(pluginManager, triggeredByUser, loaded))
             return false;
