@@ -1025,8 +1025,15 @@ bool QDltFile::messageAt(int index, QDltMsg &msg, bool useCache) const
     if (useCache)
         return const_cast<QDltFile*>(this)->getMsg(index, msg);
 
-    QByteArray data;
-    return const_cast<QDltFile*>(this)->getMsgNoCache(index, msg, data);
+    const QByteArray data = getMsg(index);
+    if (data.isEmpty())
+        return false;
+
+    bool parsed = msg.setMsg(data, true, dltv2Support);
+    if (!parsed && !dltv2Support)
+        parsed = msg.setMsg(data, true, true);
+    msg.setIndex(index);
+    return parsed;
 }
 
 QByteArray QDltFile::messageBytesAt(int index) const
