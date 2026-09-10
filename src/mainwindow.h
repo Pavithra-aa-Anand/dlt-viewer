@@ -20,6 +20,7 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include <QEvent>
 #include <QFile>
 #include <QTimer>
 #include <QDir>
@@ -44,9 +45,6 @@
 #include "tablemodel.h"
 #include "settingsdialog.h"
 #include "searchdialog.h"
-#include "messagestore.h"
-#include "indexservice.h"
-#include "decodecacheservice.h"
 #include "filterdialog.h"
 #include "dltfileindexer.h"
 #include "workingdirectory.h"
@@ -56,6 +54,7 @@
 #include "searchform.h"
 #include "updatechecker.h"
 #include "crlffilterwindow.h"
+#include "indexthreadworker.h"
 
 /**
  * @brief Namespace to contain the toolbar positions.
@@ -114,9 +113,6 @@ namespace Ui {
 
 struct EcuTree;
 class QDltExporter;
-class FilterThreadWorker;
-class IndexThreadWorker;
-class DecodeManager;
 
 class MainWindow : public QMainWindow
 {
@@ -135,23 +131,14 @@ private:
     Ui::MainWindow *ui;
     /* Timer for connecting to ECUs */
     QTimer timer;
-
-    /* Timer for draw Event */
-    QTimer drawTimer;
-    QTimer liveBatchTimer;
-
-    /* Timer to coalesce live-logging index/UI updates, independent of drawTimer's refresh-rate cadence */
-    QTimer indexUpdateTimer;
+    QTimer m_liveBatchUpdateTimer;
 
     QDltControl qcontrol;
     QFile outputfile;
     bool outputfileIsTemporary;
     bool outputfileIsFromCLI;
-    CTableModel *m_tableModel;
-    CSearchTableModel *m_searchtableModel;
-    CQDltFileMessageStoreAdapter m_messageStore;
-    CIndexService m_indexService;
-    CDecodeCacheService m_decodeCacheService;
+    TableModel *tableModel;
+    SearchTableModel *m_searchtableModel;
     WorkingDirectory workingDirectory;
     bool filterIsChanged;
 
@@ -171,19 +158,15 @@ private:
     unsigned long totalBytesRcvd;
     unsigned long totalByteErrorsRcvd;
     unsigned long totalSyncFoundRcvd;
-    int liveBatchPendingEvents;
-    int liveBatchPendingMatches;
-    int liveDisplayedRowCount;
-    bool liveBatchEventQueued;
 
     /* Search */
-    CSearchDialog *m_searchDlg;
+    SearchDialog *searchDlg;
     QShortcut *m_shortcut_searchnext;
     QShortcut *m_shortcut_searchprev;
     SearchForm* searchInput;
 
     /* CRLF Filter Window */
-    CrlfFilterWindow *m_crlfFilterWindow;
+    CrlfFilterWindow *crlfFilterWindow;
 
     /* Shortcuts */
     QShortcut *copyPayloadShortcut;
@@ -259,10 +242,6 @@ private:
 
     /* dlt-file Indexer with cancel cabability */
     DltFileIndexer *dltIndexer;
-    FilterThreadWorker *liveFilterWorker;
-    quint64 liveFilterGeneration;
-    IndexThreadWorker *liveIndexWorker;
-    DecodeManager *decodeManager;
 
     /* Color for blinking 'Apply changes'-button */
     QColor pulseButtonColor;
@@ -271,9 +250,6 @@ private:
 
     /* DLT File opened only Read only */
     bool isDltFileReadOnly;
-
-    bool m_liveFilterRefreshInProgress{false};
-    bool m_resumeDrawTimerAfterFilter{false};
 
     /* flag for enabled / disabled status of plugins */
     bool pluginsEnabled;
@@ -359,12 +335,6 @@ private:
     void checkConnectionState();
     void read(EcuItem *ecuitem);
     void updateIndex();
-    void updateIndexLiveAsync();
-    void postLiveBatchUpdateEvent();
-    void applyLiveBatchUpdate();
-    void drawUpdatedView();
-    void syncLiveFilterWorkerConfig();
-    void resetLiveFilterGeneration();
 
     void syncCheckBoxesAndMenu();
 
@@ -432,7 +402,7 @@ private:
 
     void clearSelection();
     void saveSelection();
-    void restoreSelection(bool scrollToSelection = true);
+    void restoreSelection();
     QList<int> previousSelection;
 
     /* default filters */
@@ -443,6 +413,38 @@ private:
 
     //File Splitting Settings
     QStringList outputFilePath;
+    IndexThreadWorker *m_indexWorker{nullptr};
+    bool m_indexUpdateInFlight{false};
+    bool m_indexUpdatePending{false};
+    bool m_batchUpdateEventPosted{false};
+    int m_pendingBatchFirstRow{-1};
+    int m_pendingBatchLastRow{-1};
+    int m_pendingLiveUpdateCount{0};
+
+    /**
+     * @brief Applies a processed indexing batch to the UI/data model state.
+     * @param result Batch output from the background index worker.
+     */
+    void processIndexBatchResult(const IndexThreadBatchResult &result);
+
+    /**
+     * @brief Posts a coalesced table-update event to the UI loop.
+     * @param firstRow First affected row.
+     * @param lastRow Last affected row.
+     */
+    void postBatchUpdateEvent(int firstRow, int lastRow);
+
+    /**
+     * @brief Flushes delayed live-update row range to the table view.
+     */
+    void flushPendingBatchUpdateEvent();
+
+    /**
+     * @brief Handles one queued batch-update event payload.
+     * @param firstRow First inserted/updated row.
+     * @param lastRow Last inserted/updated row.
+     */
+    void handleBatchUpdateEvent(int firstRow, int lastRow);
 
 
 
@@ -450,6 +452,11 @@ private:
 
 
 protected:
+    /**
+     * @brief Handles custom UI events including coalesced batch update events.
+     * @param event Event instance.
+     * @return True if handled, otherwise base implementation result.
+     */
     bool event(QEvent *event) override;
     void keyPressEvent ( QKeyEvent * event ) override;
     void dragEnterEvent(QDragEnterEvent *event) override;
@@ -466,8 +473,6 @@ private slots:
     void reloadLogFileFinishIndex();
     void reloadLogFileFinishFilter();
     void reloadLogFileFinishDefaultFilter();
-    void processPendingUpdateIndex();
-    void onIndexerRunFinished();
     void triggerPluginsAutoload();
 
     void onTableViewSelectionChanged(const QItemSelection & selected, const QItemSelection & deselected);
@@ -490,6 +495,11 @@ private slots:
     void on_filterWidget_itemSelectionChanged();
 
     void on_filterWidget_itemClicked(QTreeWidgetItem *item, int column);
+    /**
+     * @brief Slot invoked when the index worker finishes a batch.
+     * @param result Processed batch output.
+     */
+    void onIndexBatchProcessed(const IndexThreadBatchResult &result);
 
     void on_pluginWidget_itemExpanded(QTreeWidgetItem* item);
 
@@ -659,9 +669,6 @@ private slots:
     void on_lineEditFilterEnd_textChanged(const QString &arg1);
 
     void on_comboBoxFilterSelection_currentTextChanged(const QString &arg1);
-    void onLiveIndexBatchStarted();
-    void onLiveIndexBatchFinished();
-    void onLiveIndexDecision(int index, bool matched, QString markerFilterName);
 
 public slots:
     // this slot is required because it is implicitly used in qdltcontrol
@@ -685,7 +692,6 @@ public slots:
 
     void handleImportResults(const QString &);
     void handleExportResults(const QString &);
-    void onLiveFilterMatchesReady(const QVector<qint64> &indices, quint64 generation);
 
 public:
 

@@ -33,96 +33,86 @@
 #include "project.h"
 #include "qdltpluginmanager.h"
 #include "fieldnames.h"
-#include "decodecacheservice.h"
+#include <qdltlrucache.hpp>
 
 #include <optional>
-#include <vector>
 
 #define DLT_VIEWER_COLUMN_COUNT FieldNames::Arg0
 
-class CTableModel : public QAbstractTableModel
+class TableModel : public QAbstractTableModel
 {
 Q_OBJECT
 
 public:
-    //! Construct the main table model.
-    CTableModel(const QString &data, QObject *parent = 0);
-    //! Destroy the main table model.
-    ~CTableModel();
+    TableModel(const QString &data, QObject *parent = 0);
+    ~TableModel();
 
-    //! Return data for a table cell.
     QVariant data(const QModelIndex &index, int role) const;
-    //! Return header data for a column or row.
     QVariant headerData(int section, Qt::Orientation orientation,
          int role = Qt::DisplayRole) const;
-    //! Return current row count for the active view.
     int rowCount(const QModelIndex &parent = QModelIndex()) const;
-    //! Return number of visible columns.
     int columnCount(const QModelIndex &parent = QModelIndex()) const;
 
     /* pointer to the current loaded file */
     QDltFile *qfile;
     Project *project;
     QDltPluginManager *pluginManager;
-    //! Notify attached views that the model content changed semantically.
     void modelChanged();
+
+    /**
+     * @brief Announces appended rows for incremental live updates.
+     * @param firstRow First appended row.
+     * @param lastRow Last appended row.
+     */
     void appendRows(int firstRow, int lastRow);
-    //! Notify attached views about a visual-only change without invalidating message caches.
-    void refreshVisualData();
-    //! Notify attached views that live logging appended new rows.
-    void liveDataAppended();
-    //! Set marker highlight at a specific row.
     int setMarker(long int lineindex, QColor hlcolor); //used in search functionality
-    //! Set manual marker highlight for selected rows.
     int setManualMarker(QList<unsigned long int> selectedMarkerRows, QColor hlcolor); //used in mainwindow
     void setForceEmpty(bool emptyForceFlag) { this->emptyForceFlag = emptyForceFlag; }
-    bool isForceEmpty() const { return emptyForceFlag; }
     void setLoggingOnlyMode(bool loggingOnlyMode) { this->loggingOnlyMode = loggingOnlyMode; }
     void setLastSearchIndex(int idx) {this->lastSearchIndex = idx;}
-    //! Return tooltip text for a given field/column.
     QString getToolTipForFields(FieldNames::Fields cn);
-    //! Inject the shared decode cache instance owned by MainWindow.
-    void setDecodeCacheService(CDecodeCacheService *service) { m_decodeCacheService = service; }
 
 private:
-    struct DecodedMsgCacheEntry
-    {
-        long int filterPosIndex;
-        std::optional<QDltMsg> msg;
-    };
-
     long int lastSearchIndex;
     bool emptyForceFlag;
     bool loggingOnlyMode;
-    int m_lastKnownRowCount;
-    int m_lastKnownColumnCount;
 
-    mutable std::vector<int> m_filteredProjectionCache;
-    CDecodeCacheService *m_decodeCacheService = nullptr;
+    // cache is used in data()-method to avoid decoding of the same message multiple times
+    // key is a message index in the qdltfile; message can fail to decode, in that case value is empty optional
+    mutable QDltLruCache<long int, std::optional<QDltMsg>> m_cache{512};
+    // Cache formatted display values for recently painted cells to reduce UI-thread formatting churn.
+    mutable QDltLruCache<quint64, QVariant> m_renderCache{4096};
 
     long int searchhit;
+
+    /**
+     * @brief Builds a cache key for rendered cell values.
+     * @param row Row index.
+     * @param column Column index.
+     * @return Composite cache key.
+     */
+    quint64 renderCacheKey(int row, int column) const;
+
+    /**
+     * @brief Formats display value for a table cell.
+     * @param index Target model index.
+     * @param msg Optional decoded message.
+     * @param filterposindex Message index in filtered view.
+     * @return Rendered cell value.
+     */
+    QVariant buildDisplayData(const QModelIndex &index, std::optional<QDltMsg> &msg, long int filterposindex) const;
     QColor searchBackgroundColor() const;
     QColor searchhit_higlightColor;
     QColor manualMarkerColor;
     QList<unsigned long int> selectedMarkerRows;
-    //! Resolve model row index to global message index.
-    int resolveGlobalIndexForRow(int row) const;
-    //! Clear all caches whose entries depend on the current file/filter row mapping.
-    void invalidateMessageCaches(bool clearDecodedMessages);
-    //! Notify Qt views about row/column delta updates.
-    void notifyModelDelta(int currentRowCount, int currentColumnCount);
-    //! Compute message background color for a row.
     QColor getMsgBackgroundColor(const std::optional<QDltMsg>& msg, int index, long int filterposindex) const;
-    //! Handle tooltip and related item-view events.
     bool eventFilter(QObject *obj, QEvent *event);
 };
 
-class CHtmlDelegate : public QStyledItemDelegate
+class HtmlDelegate : public QStyledItemDelegate
 {
 protected:
-    //! Paint rich-text content in item delegates.
     void paint ( QPainter * painter, const QStyleOptionViewItem & option, const QModelIndex & index ) const;
-    //! Return rich-text item size hint.
     QSize sizeHint ( const QStyleOptionViewItem & option, const QModelIndex & index ) const;
 };
 

@@ -1,26 +1,37 @@
 #ifndef DECODEMANAGER_H
 #define DECODEMANAGER_H
 
-#include "qdltmessagedecoder.h"
-
-#include <QList>
 #include <QMutex>
 
-class QDltPlugin;
 class QDltPluginManager;
+class QDltMsg;
 
-class DecodeManager : public QDltMessageDecoder
+/**
+ * @brief Thread-safe gateway for plugin-based message decoding.
+ */
+class DecodeManager
 {
 public:
-    explicit DecodeManager(QDltPluginManager *pluginManager);
+    /**
+     * @brief Returns the singleton decode manager instance.
+     * @return DecodeManager singleton reference.
+     */
+    static DecodeManager &instance();
 
-    void refreshDecoderChain();
-    void decodeMsg(QDltMsg &msg, int triggeredByUser) override;
+    /**
+     * @brief Decodes a message through the plugin manager.
+     * @param pluginManager Plugin manager used for decode callbacks.
+     * @param msg Message to decode in-place.
+     * @param enabled True to run decoding, false to skip.
+     * @param silentMode True for reduced decode-side verbosity.
+     */
+    void decode(QDltPluginManager *pluginManager, QDltMsg &msg, bool enabled, bool silentMode);
 
 private:
-    QDltPluginManager *pluginManager;
-    QMutex decoderChainMutex;
-    QList<QDltPlugin*> decoderPlugins;
+    DecodeManager() = default;
+    Q_DISABLE_COPY(DecodeManager)
+
+    QMutex m_mutex;
 };
 
 #endif // DECODEMANAGER_H
