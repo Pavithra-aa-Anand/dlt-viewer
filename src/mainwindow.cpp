@@ -183,10 +183,6 @@ MainWindow::MainWindow(QWidget *parent) :
     }
 
     /* auto connect */
-    // Redraw only when new data actually arrived (armed from updateIndex()), not on a fixed poll.
-    drawTimer.setSingleShot(true);
-    connect(&drawTimer, &QTimer::timeout, this, &MainWindow::drawUpdatedView);
-
     if( (settings->autoConnect != 0) ) // in convertion mode we do not need any connection ...)
     {
         connectAll();
@@ -703,10 +699,6 @@ void MainWindow::initView()
     applyConfig->setShortcut((Qt::SHIFT | Qt::CTRL) | Qt::Key_C);
     connect(applyConfig, SIGNAL(triggered()), this, SLOT(on_applyConfig_clicked()));
     addAction(applyConfig);
-
-    /* The toolbar/menu "Apply Configuration" action is a separate QAction from the
-     * shortcut above and from the applyConfig button, so it needs its own connection. */
-    connect(ui->actionApply_Configuration, SIGNAL(triggered()), this, SLOT(on_applyConfig_clicked()));
 
     /* Add shortcut to add filter */
     QAction *addFilter = new QAction(this);
@@ -1500,12 +1492,7 @@ bool MainWindow::openDltFile(QStringList fileNames)
         dlt_file_init(&importfile,0);
 
         /* open DLT stream file */
-        // fix can not open dlt file in chinese environment
-        if (QString::fromLatin1(fileNames.last().toLatin1()) == fileNames.last()) {
-            dlt_file_open(&importfile,fileNames.last().toLatin1(),0);
-        } else {
-            dlt_file_open(&importfile,fileNames.last().toLocal8Bit(),0);
-        }
+        dlt_file_open(&importfile,fileNames.last().toLatin1(),0);
         if(!tempfile.open())
         {
             qDebug() << "Failed opening WriteOnly" << outputfile.fileName();
@@ -1588,15 +1575,9 @@ void MainWindow::appendDltFile(const QString &fileName)
     progress.setModal(true);
     int num = 0;
 
-    int ret = 0;
     /* open DLT log file with same filename as output file */
-    // fix can not open dlt file in chinese environment
-    if (QString::fromLatin1(fileName.toLatin1()) == fileName) {
-        ret = dlt_file_open(&importfile,fileName.toLatin1(),0);
-    } else {
-        ret = dlt_file_open(&importfile,fileName.toLocal8Bit(),0);
-    }
-    if (ret < 0) {
+    if (dlt_file_open(&importfile,fileName.toLatin1() ,0)<0)
+    {
         return;
     }
 
@@ -1673,12 +1654,7 @@ void MainWindow::on_action_menuFile_Import_DLT_Stream_triggered()
     dlt_file_init(&importfile,0);
 
     /* open DLT stream file */
-    // fix can not open dlt file in chinese environment
-    if (QString::fromLatin1(fileName.toLatin1()) == fileName) {
-        dlt_file_open(&importfile,fileName.toLatin1(),0);
-    } else {
-        dlt_file_open(&importfile,fileName.toLocal8Bit(),0);
-    }
+    dlt_file_open(&importfile,fileName.toLatin1(),0);
 
     /* parse and build index of complete log file and show progress */
     if(!outputfile.isOpen() && !outputfile.open(QIODevice::WriteOnly|QIODevice::Append))
@@ -1724,12 +1700,7 @@ void MainWindow::on_action_menuFile_Import_DLT_Stream_with_Serial_Header_trigger
     dlt_file_init(&importfile,0);
 
     /* open DLT stream file */
-    // fix can not open dlt file in chinese environment
-    if (QString::fromLatin1(fileName.toLatin1()) == fileName) {
-        dlt_file_open(&importfile,fileName.toLatin1(),0);
-    } else {
-        dlt_file_open(&importfile,fileName.toLocal8Bit(),0);
-    }
+    dlt_file_open(&importfile,fileName.toLatin1(),0);
 
     /* parse and build index of complete log file and show progress */
     if(!outputfile.isOpen() && !outputfile.open(QIODevice::WriteOnly|QIODevice::Append))
@@ -2015,7 +1986,7 @@ void MainWindow::rebuildMarkedRowCache()
         for(const auto &idx : selectedMarkerRows)
             marked.insert(static_cast<qint64>(idx));
 
-        const QVector<qint64> viewIndices = qfile.getIndexFilter();
+        const QVector<qint64> &viewIndices = qfile.getIndexFilterRef();
         const int limit = qMin(rowCount, viewIndices.size());
 
         markedRowsInView.reserve(marked.size());
@@ -2670,11 +2641,11 @@ void MainWindow::reloadLogFileFinishFilter()
     }
 
     // enable filter if requested
-    qfile.enableFilter(dltIndexer->getEffectiveFilteringEnabled());
+    qfile.enableFilter(filtersEnabled);
     qfile.enableSortByTime(false);
     {
         const bool sortByTimestampEnabled = QDltSettingsManager::getInstance()->value("startup/sortByTimestampEnabled", false).toBool();
-        qfile.enableSortByTimestamp(dltIndexer->getEffectiveFilteringEnabled() && sortByTimestampEnabled);
+        qfile.enableSortByTimestamp(filtersEnabled && sortByTimestampEnabled);
     }
 
     // updateIndex, if messages are received in between
@@ -3181,7 +3152,8 @@ bool MainWindow::openDlfFile(QString fileName,bool replace)
     {
         workingDirectory.setDlfDirectory(QFileInfo(fileName).absolutePath());
         setCurrentFilters(fileName);
-        filterCountChanged();
+        applyConfigEnabled(true);
+        on_filterWidget_itemSelectionChanged();
         ui->tabWidget->setCurrentWidget(ui->tabPFilter);
     }
     else
@@ -3980,7 +3952,17 @@ void MainWindow::on_tabExplore_fileOpenRequested(const QString &path)
     qDebug() << "on_tabExplore_fileOpenRequested" << path;
     if (path.endsWith(".dlt", Qt::CaseInsensitive)) {
         onOpenTriggered(QStringList() << path);
-    } else if (path.endsWith(".pcap", Qt::CaseInsensitive) || path.endsWith(".mf4", Qt::CaseInsensitive)) {
+    } else if (path.endsWith(".pcap", Qt::CaseInsensitive)) {
+        on_action_menuFile_Clear_triggered();
+        QDltImporter* importerThread = new QDltImporter(&outputfile, path);
+        importerThread->setPcapPorts(settings->importerPcapPorts);
+        connect(importerThread, &QDltImporter::progress, this, &MainWindow::progress);
+        connect(importerThread, &QDltImporter::resultReady, this, &MainWindow::handleImportResults);
+        connect(importerThread, &QDltImporter::finished, importerThread, &QObject::deleteLater);
+        statusProgressBar->show();
+        importerThread->setPriority(QThread::LowPriority);
+        importerThread->start();
+    } else if (path.endsWith(".mf4", Qt::CaseInsensitive)) {
         on_action_menuFile_Clear_triggered();
         QDltImporter* importerThread = new QDltImporter(&outputfile, path);
         importerThread->setPcapPorts(settings->importerPcapPorts);
@@ -4020,30 +4002,15 @@ void MainWindow::on_tabExplore_filesOpenRequest(const QStringList& dltPaths) {
     outputfileIsTemporary = true;
 }
 
-void MainWindow::on_tabExplore_filesAppendRequest(const QStringList& paths) {
-    qDebug() << "on_tabExplore_filesAppendRequest" << paths;
-
-    QStringList importFilenames;
-    for (const auto &path : paths) {
-        if (path.endsWith(".dlt", Qt::CaseInsensitive)) {
-            appendDltFile(path);
-        } else if (path.endsWith(".pcap", Qt::CaseInsensitive) || path.endsWith(".mf4", Qt::CaseInsensitive)) {
-            importFilenames.append(path);
-        } else if (path.endsWith(".dlf", Qt::CaseInsensitive)) {
-            openDlfFile(path, false);
-        }
-    }
-
-    if (!importFilenames.isEmpty()) {
-        QDltImporter *importerThread = new QDltImporter(&outputfile,importFilenames);
-        importerThread->setPcapPorts(settings->importerPcapPorts);
-        connect(importerThread, &QDltImporter::progress, this, &MainWindow::progress);
-        connect(importerThread, &QDltImporter::resultReady, this, &MainWindow::handleImportResults);
-        connect(importerThread, &QDltImporter::finished, importerThread, &QObject::deleteLater);
-        statusProgressBar->show();
-        importerThread->setPriority(QThread::LowPriority);
-        importerThread->start();
-    }
+void MainWindow::on_tabExplore_filesAppendRequest(const QStringList& mf4AndPcapPaths) {
+    QDltImporter* importerThread = new QDltImporter(&outputfile, mf4AndPcapPaths);
+    importerThread->setPcapPorts(settings->importerPcapPorts);
+    connect(importerThread, &QDltImporter::progress, this, &MainWindow::progress);
+    connect(importerThread, &QDltImporter::resultReady, this, &MainWindow::handleImportResults);
+    connect(importerThread, &QDltImporter::finished, importerThread, &QObject::deleteLater);
+    statusProgressBar->show();
+    importerThread->setPriority(QThread::LowPriority);
+    importerThread->start();
 }
 
 void MainWindow::on_filterWidget_customContextMenuRequested(QPoint pos)
@@ -4209,6 +4176,12 @@ void MainWindow::connectAll()
         EcuItem *ecuitem = (EcuItem*)project.ecu->topLevelItem(num);
         connectECU(ecuitem);
     }
+
+    // periodically update table view to account for the new incoming messages
+    const int drawInterval = (settings->RefreshRate > 0) ? 1000 / settings->RefreshRate
+                                                         : 1000 / DEFAULT_REFRESH_RATE;
+    connect(&drawTimer, &QTimer::timeout, this, &MainWindow::drawUpdatedView, Qt::UniqueConnection);
+    drawTimer.start(drawInterval);
 }
 
 void MainWindow::disconnectAll()
@@ -4866,13 +4839,9 @@ void MainWindow::read(EcuItem* ecuitem)
                 }
             }
             //ecuitem->ipcon.add(data);
-            // Skip the redundant tree-widget update once already connected; state doesn't change per datagram.
-            if(!ecuitem->connected || !ecuitem->tryToConnect)
-            {
-                ecuitem->connected= true;
-                ecuitem->tryToConnect = true;
-                ecuitem->update();
-            }
+            ecuitem->connected= true;
+            ecuitem->tryToConnect = true;
+            ecuitem->update();
             udpMessageCounter++;
 
             /* analyse received message, check if DLT control message response */
@@ -5132,14 +5101,6 @@ void MainWindow::updateIndex()
 
         /* Repoint m_messageStore to updated file after live index growth */
         m_messageStore.setFile(&qfile);
-
-        // Arm one redraw, coalescing any further growth until it fires; stays dormant when idle.
-        if(!drawTimer.isActive())
-        {
-            const int drawInterval = (settings->RefreshRate > 0) ? 1000 / settings->RefreshRate
-                                                                 : 1000 / DEFAULT_REFRESH_RATE;
-            drawTimer.start(drawInterval);
-        }
     }
 }
 
@@ -7281,7 +7242,6 @@ void MainWindow::filterAddTable() {
         project.filter->addTopLevelItem(item);
         filterDialogRead(dlg,item);
         filterIsChanged = true;
-        filterCountChanged();
     }
 }
 
@@ -7336,7 +7296,6 @@ void MainWindow::filterAdd()
         project.filter->addTopLevelItem(item);
         filterDialogRead(dlg,item);
         filterIsChanged = true;
-        filterCountChanged();
     }
 }
 
@@ -7386,7 +7345,6 @@ void MainWindow::on_action_menuFilter_Add_triggered() {
         project.filter->addTopLevelItem(item);
         filterDialogRead(dlg,item);
         filterIsChanged = true;
-        filterCountChanged();
     }
 }
 
@@ -7489,19 +7447,29 @@ void MainWindow::filterDialogRead(FilterDialog &dlg,FilterItem* item)
     }
     if(item->filter.isMarker())
     {
-        // Row highlighting comes from qfile->checkMarker() per message and takes
-        // effect immediately; the aggregate marker count is only ever displayed
-        // by the on-demand "Marked Message Count" action (findFilteredLines()),
-        // which always recomputes it fresh. Recomputing it here too would just
-        // repeat a full-file scan for a result nothing reads.
         m_tableModel->modelChanged();
+        QVector<qint64> indices;
+        if(qfile.isFilter())
+        {
+            indices = qfile.getIndexFilter();
+        }
+        else
+        {
+            indices.reserve(qfile.size());
+            for(int i = 0; i < qfile.size(); i++)
+            {
+                indices.append(i);
+            }
+        }
+
+        dltIndexer->recomputeMarkerCounts(qfile.getFilterList(), indices);
     }
 }
 
 //findFiltered Lines is used for segregating the number of lines filtered per filter.
 //previousFilterMap is used for checking if the same color is used for the same filter.
 //If same color is used it will not be counted else, it will check the count again.
-bool MainWindow::findFilteredLines()
+void MainWindow::findFilteredLines()
 {
     filterCountMap.clear();
 
@@ -7540,34 +7508,12 @@ bool MainWindow::findFilteredLines()
                 QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
             });
 
-        // QProgressDialog::closeEvent() (title-bar close, since there's no visible
-        // Cancel button) only emits canceled() directly - it does not go through
-        // the cancel() slot, so QProgressDialog::wasCanceled() stays false for that
-        // path. Track cancellation ourselves instead of relying on wasCanceled().
-        bool cancelledByUser = false;
-        QMetaObject::Connection c3 = connect(
-            &progress, &QProgressDialog::canceled,
-            this, [&](){
-                cancelledByUser = true;
-                dltIndexer->cancelMarkerCount();
-            });
-
         progress.show();
         dltIndexer->recomputeMarkerCounts(qfile.getFilterList(), indices);
-        const bool wasCancelled = cancelledByUser;
         progress.setValue(progress.maximum());
 
         disconnect(c1);
         disconnect(c2);
-        disconnect(c3);
-
-        if(wasCancelled)
-        {
-            // Counts are incomplete; keep whatever was shown before rather than
-            // presenting a partial scan as if it were the final result.
-            return false;
-        }
-
         const QMap<QString, int> markerCounts = dltIndexer->getMarkerCounts();
 
         // Rebuild marker list from currently loaded filters (including .dlf loaded ones).
@@ -7588,7 +7534,6 @@ bool MainWindow::findFilteredLines()
     }
 
     totalMessages = (ui->tableView->model() != nullptr) ? ui->tableView->model()->rowCount() : 0;
-    return true;
 }
 
 //The function is triggered when "Marked Message Count" is clicked in the filter's custom menu.
@@ -7596,8 +7541,7 @@ bool MainWindow::findFilteredLines()
 //generates a dialog for displaying the marked messages count.
 void MainWindow::on_actionFiltered_Message_Count_triggered(){
 
-  if(!findFilteredLines())
-      return; // user cancelled the progress dialog; nothing complete to show
+  findFilteredLines();
 
   QDialog *dialog = new QDialog(this);
      dialog->setWindowTitle("Filtered Message Counts");
@@ -7658,7 +7602,6 @@ void MainWindow::on_action_menuFilter_Duplicate_triggered() {
             project.filter->addTopLevelItem(newitem);
             filterDialogRead(dlg,newitem);
             filterIsChanged = true;
-            filterCountChanged();
         }
     }
     else {
@@ -7690,7 +7633,6 @@ void MainWindow::on_action_menuFilter_Edit_triggered()
         {
             filterDialogRead(dlg,item);
             filterIsChanged = true;
-            filterCountChanged();
         }
     }
     else {
@@ -7741,8 +7683,9 @@ void MainWindow::onactionmenuFilter_SetAllActiveTriggered()
         }
     }
 
-    /* Defer the actual (re-)filtering/marker update until Apply Configuration is clicked. */
     applyConfigEnabled(true);
+
+    on_filterWidget_itemSelectionChanged();
 }
 
 void MainWindow::onactionmenuFilter_SetAllInactiveTriggered()
@@ -7775,15 +7718,16 @@ void MainWindow::onactionmenuFilter_SetAllInactiveTriggered()
         }
     }
 
-    /* Defer the actual (re-)filtering/marker update until Apply Configuration is clicked. */
     applyConfigEnabled(true);
+
+    on_filterWidget_itemSelectionChanged();
 }
 
 void MainWindow::on_action_menuFilter_Clear_all_triggered()
 {
     /* delete complete filter list */
     project.filter->clear();
-    filterCountChanged();
+    applyConfigEnabled(true);
     filterIsChanged = false;
 }
 
@@ -8233,6 +8177,8 @@ void MainWindow::on_pluginWidget_itemExpanded(QTreeWidgetItem* item)
 
 void MainWindow::on_filterWidget_itemClicked(QTreeWidgetItem *item, int column)
 {
+    on_filterWidget_itemSelectionChanged();
+
     if(column == 0)
     {
         FilterItem *tmp = (FilterItem*)item;
@@ -8244,15 +8190,7 @@ void MainWindow::on_filterWidget_itemClicked(QTreeWidgetItem *item, int column)
         {
             tmp->filter.enableFilter = true;
         }
-        /* Do not touch qfile's active filter list or repaint the table here.
-         * Toggling the checkbox must only be a pending change - it must not
-         * take effect (e.g. remove marker colours) until the user explicitly
-         * clicks "Apply Configuration", which re-runs the CFI. */
         applyConfigEnabled(true);
-    }
-    else
-    {
-        on_filterWidget_itemSelectionChanged();
     }
 }
 
@@ -8742,6 +8680,7 @@ void MainWindow::searchTableRenewed()
         ui->dockWidgetSearchIndex->show();
         ui->dockWidgetSearchIndex->setWindowTitle(hits);
     }
+    m_searchtableModel->modelChanged();
 }
 
 
