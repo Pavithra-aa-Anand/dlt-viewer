@@ -101,17 +101,6 @@ static QThreadPool &findAllThreadPool()
     });
     return pool;
 }
-
-// Pool-lifetime-scoped, one instance shared by every "Find All" run: pool worker
-// threads are long-lived and reused across searches, so a per-call QThreadStorage
-// would leak (Qt only reclaims per-thread data when the *thread* exits, not when
-// the QThreadStorage object owning it is destroyed). Sharing one instance here
-// means the per-thread QFile handles are reused/cleaned up correctly instead.
-static QThreadStorage<QFile*> &findAllWorkerReaders()
-{
-    static QThreadStorage<QFile*> workerReaders;
-    return workerReaders;
-}
 #endif
 
 } // namespace
@@ -412,8 +401,6 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
         }
 
         // File loading and parsing are parallel; shared decoder plugins remain serialized.
-        // Pipeline the two: chunk N+1's file read + parse runs in parallel while chunk N
-        // is being decoded/matched, instead of loading and decoding each chunk in lockstep.
         std::vector<std::uint64_t> matches;
         matches.reserve(qMax(1, total / 16));
         const int workerCount = findAllPool->maxThreadCount();
@@ -421,9 +408,11 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
         const int chunkCount = qMax(1, qMax(qMin(total, workerCount * 8),
                                              (total + maxChunkSize - 1) / maxChunkSize));
         const int chunkSize = qMax(1, (total + chunkCount - 1) / chunkCount);
-        QThreadStorage<QFile*> &workerReaders = findAllWorkerReaders();
+        QThreadStorage<QFile*> workerReaders;
 
-        auto loadChunk = [=, &workerReaders](int begin, int end) {
+        for (int begin = 0; begin < total; begin += chunkSize)
+        {
+            const int end = qMin(begin + chunkSize, total);
             QVector<int> rows;
             rows.reserve(end - begin);
             for (int row = begin; row < end; ++row)
@@ -459,33 +448,20 @@ void CSearchDialog::startParallelFindAll(QRegularExpression searchTextRegExp)
                     result.push_back(loaded);
             };
 
-            return QtConcurrent::mappedReduced<std::vector<LoadedSearchMessage>>(
+            const auto loadedMessages = QtConcurrent::blockingMappedReduced<std::vector<LoadedSearchMessage>>(
                 findAllPool, rows, loadMessage, appendLoaded,
                 QtConcurrent::OrderedReduce | QtConcurrent::SequentialReduce);
-        };
-
-        QFuture<std::vector<LoadedSearchMessage>> nextChunkFuture = loadChunk(0, qMin(chunkSize, total));
-
-        for (int begin = 0; begin < total; begin += chunkSize)
-        {
-            const int end = qMin(begin + chunkSize, total);
-
-            // Blocks only until this chunk's load (already in flight) finishes.
-            std::vector<LoadedSearchMessage> loadedMessages = nextChunkFuture.result();
-
-            // Start the next chunk's load now so it overlaps with this chunk's decode below.
-            if (end < total && !(dlg && dlg->isSearchCancelled.load(std::memory_order_relaxed)))
-                nextChunkFuture = loadChunk(end, qMin(end + chunkSize, total));
 
             DltMessageMatcher matcher = createMatcher();
             const std::size_t matchesBeforeChunk = matches.size();
-            for (LoadedSearchMessage &loaded : loadedMessages)
+            for (const LoadedSearchMessage &loaded : loadedMessages)
             {
                 if (dlg && dlg->isSearchCancelled.load(std::memory_order_relaxed))
                     break;
 
-                decodeCache->decode(pluginPtr, dlg ? dlg->fSilentMode : 0, loaded.message);
-                if (matcher.match(loaded.message, searchPattern))
+                QDltMsg message = loaded.message;
+                decodeCache->decode(pluginPtr, dlg ? dlg->fSilentMode : 0, message);
+                if (matcher.match(message, searchPattern))
                     matches.push_back(loaded.index);
             }
 
@@ -641,24 +617,6 @@ void CSearchDialog::setSearchColour(QLineEdit *lineEdit,int result)
 void CSearchDialog::focusRow(long int searchLine)
 {
     CTableModel *model = qobject_cast<CTableModel *>(table->model());
-    if(!model || !table)
-    {
-        return;
-    }
-
-    if(searchLine < 0 || searchLine >= model->rowCount())
-    {
-        // Clear marker state without trying to navigate to an invalid model index.
-        model->setMarker(-1, highlightColor);
-        model->setLastSearchIndex(-1);
-        if(table->selectionModel())
-        {
-            table->selectionModel()->clear();
-        }
-        table->viewport()->update();
-        return;
-    }
-
     QModelIndex idx = model->index(searchLine, 0, QModelIndex());
     //qDebug() << "Focus row in message table window" << searchLine << __FILE__ << __LINE__;
 
@@ -668,11 +626,8 @@ void CSearchDialog::focusRow(long int searchLine)
     model->setMarker(searchLine, highlightColor);
 
     model->setLastSearchIndex(searchLine);
-    if(table->selectionModel())
-    {
-        table->selectionModel()->clear();
-    }
-    table->viewport()->update();
+    table->selectionModel()->clear();
+    model->refreshVisualData();
 }
 
 int CSearchDialog::find()
@@ -884,10 +839,7 @@ void CSearchDialog::findMessages(long int searchLine, long int searchBorder, QRe
     }
     matcher.setHeaderSearchEnabled(getHeader());
     matcher.setPayloadSearchEnabled(getPayload());
-    // Only decode when payload search is actually enabled; matching header/APID/CTID
-    // never uses the decoded payload, so decoding for it is wasted work.
-    const bool pluginsEnabledSetting = QDltSettingsManager::getInstance()->value("startup/pluginsEnabled", true).toBool();
-    const bool decodeEnabled = pluginsEnabledSetting && getPayload();
+    const bool decodeEnabled = QDltSettingsManager::getInstance()->value("startup/pluginsEnabled", true).toBool();
 
     do
     {
@@ -932,16 +884,12 @@ void CSearchDialog::findMessages(long int searchLine, long int searchBorder, QRe
             continue;
         }
 
-        // findMessages() scans forward/backward and rarely revisits a message, so the
-        // shared decode cache's hit rate is structurally near zero here; bypass it
-        // entirely instead of paying its mutex/hash/eviction cost for no benefit.
-        if(!m_decodeCacheService || !m_decodeCacheService->message(file,
+        if(!m_decodeCacheService->message(file,
                                          pluginManager,
                                          globalIndex,
                                          decodeEnabled,
                                          fSilentMode,
                                          msg,
-                                         true,
                                          true))
         {
             continue;
