@@ -90,32 +90,16 @@ CTableModel::CTableModel(const QString & /*data*/, QObject *parent)
      QDltMsg omsg;
      const bool decodeEnabled = QDltSettingsManager::getInstance()->value("startup/pluginsEnabled", true).toBool();
      const int triggeredByUser = !QDltOptManager::getInstance()->issilentMode();
-     const std::uint64_t pipelineGeneration = pluginManager ? pluginManager->decodePipelineGeneration() : 0;
 
-    // Reuse the last decoded row across the multiple roles/columns Qt requests
-    // per paint pass instead of re-entering the shared, mutex-protected cache.
-    if (m_lastRowCacheValid &&
-        m_lastRowCacheGlobalIndex == filterposindex &&
-        m_lastRowCacheDecodeEnabled == decodeEnabled &&
-        m_lastRowCacheTriggeredByUser == triggeredByUser &&
-        m_lastRowCachePipelineGeneration == pipelineGeneration)
-    {
-        msg = std::make_optional(m_lastRowCacheMsg);
-    }
-    else if (m_decodeCacheService && m_decodeCacheService->message(qfile,
-                                     pluginManager,
-                                     filterposindex,
-                                     decodeEnabled,
-                                     triggeredByUser,
-                                     omsg,
-                                     true)) {
+    // CDecodeCacheService owns the complete decode identity, including plugin-pipeline generation.
+     if (m_decodeCacheService && m_decodeCacheService->message(qfile,
+                                      pluginManager,
+                                      filterposindex,
+                                      decodeEnabled,
+                                      triggeredByUser,
+                                      omsg,
+                                      true)) {
          msg = std::make_optional(omsg);
-         m_lastRowCacheGlobalIndex = filterposindex;
-         m_lastRowCacheDecodeEnabled = decodeEnabled;
-         m_lastRowCacheTriggeredByUser = triggeredByUser;
-         m_lastRowCachePipelineGeneration = pipelineGeneration;
-         m_lastRowCacheMsg = omsg;
-         m_lastRowCacheValid = true;
      }
 
      if (role == Qt::DisplayRole)
@@ -299,7 +283,7 @@ CTableModel::CTableModel(const QString & /*data*/, QObject *parent)
         {
             for(int num = 0; num < project->filter->topLevelItemCount (); num++) {
                 FilterItem *item = (FilterItem*)project->filter->topLevelItem(num);
-                if(item && item->checkState(0) == Qt::Checked && item->filter.enableRegexSearchReplace) {
+                if(item->checkState(0) == Qt::Checked && item->filter.enableRegexSearchReplace) {
                     visu_data.replace(QRegularExpression(item->filter.regex_search), item->filter.regex_replace);
                 }
             }
@@ -392,8 +376,8 @@ QVariant CTableModel::headerData(int section, Qt::Orientation orientation,
      /* last search index must be deleted because model changed */
      lastSearchIndex = -1;
 
-    // Projection cache is extended incrementally in resolveGlobalIndexForRow() instead of being
-    // cleared here, so scrolling/selecting during live logging doesn't pay a full rebuild per tick.
+    // Rebuild the projection snapshot because appended rows can reorder filtered or sorted views.
+     invalidateMessageCaches(false);
 
      if(firstModelNotification || m_lastKnownColumnCount != currentColumnCount || currentRowCount < previousRowCount)
      {
@@ -421,7 +405,6 @@ QVariant CTableModel::headerData(int section, Qt::Orientation orientation,
 void CTableModel::invalidateMessageCaches(bool clearDecodedMessages)
 {
     m_filteredProjectionCache.clear();
-    m_lastRowCacheValid = false;
 
     if (clearDecodedMessages && m_decodeCacheService)
         m_decodeCacheService->clearForFile(qfile);
@@ -449,34 +432,12 @@ int CTableModel::resolveGlobalIndexForRow(int row) const
         return row;
     }
     // Filter is ON
-    const auto currentFilterSize = static_cast<std::vector<int>::size_type>(qfile->sizeFilter());
-    if (m_filteredProjectionCache.size() != currentFilterSize)
+    if (m_filteredProjectionCache.size() !=
+        static_cast<std::vector<int>::size_type>(qfile->sizeFilter()))
     {
-        // Live logging only ever appends to the filtered index (manual markers, the one case
-        // that can reorder it, are forced empty while live logging is active), so extend the
-        // existing snapshot instead of paying a full O(n) rebuild on every redraw tick.
-        bool extended = false;
-        if (currentFilterSize > m_filteredProjectionCache.size() && !m_filteredProjectionCache.empty())
-        {
-            const auto oldSize = m_filteredProjectionCache.size();
-            const QVector<qint64> filterTail = qfile->getIndexFilterTail(static_cast<int>(oldSize) - 1);
-            const auto expectedTailSize = currentFilterSize - oldSize + 1;
-            if (static_cast<std::vector<int>::size_type>(filterTail.size()) == expectedTailSize
-                && filterTail.front() == m_filteredProjectionCache.back())
-            {
-                m_filteredProjectionCache.reserve(currentFilterSize);
-                for (auto i = std::size_t{1}; i < filterTail.size(); ++i)
-                    m_filteredProjectionCache.push_back(static_cast<int>(filterTail.at(static_cast<int>(i))));
-                extended = true;
-            }
-        }
-
-        if (!extended)
-        {
-            CIndexService indexService;
-            m_filteredProjectionCache =
-                indexService.snapshotProjection(buildActiveFilteredProjection(qfile));
-        }
+        CIndexService indexService;
+        m_filteredProjectionCache =
+            indexService.snapshotProjection(buildActiveFilteredProjection(qfile));
     }
 
     if (static_cast<std::vector<int>::size_type>(row) < m_filteredProjectionCache.size())
