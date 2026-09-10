@@ -37,7 +37,7 @@ std::vector<int> buildActiveFilteredProjection(const QDltFile *file)
         return filteredProjection;
     }
 
-    const QVector<qint64> filterRef = file->getIndexFilter();
+    const auto &filterRef = file->getIndexFilterRef();
     filteredProjection.reserve(filterRef.size());
     for (const auto index : filterRef)
     {

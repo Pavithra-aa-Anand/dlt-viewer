@@ -20,12 +20,12 @@
 
 #include "qdltfile.h"
 
-CQDltFileMessageStoreAdapter::CQDltFileMessageStoreAdapter(QDltFile *file)
+CQDltFileMessageStoreAdapter::CQDltFileMessageStoreAdapter(const QDltFile *file)
     : m_file(file)
 {
 }
 
-void CQDltFileMessageStoreAdapter::setFile(QDltFile *file)
+void CQDltFileMessageStoreAdapter::setFile(const QDltFile *file)
 {
     m_file = file;
 }
@@ -70,51 +70,25 @@ int CQDltFileMessageStoreAdapter::globalIndexForMessageId(MessageId messageId) c
     return contains(messageId) ? static_cast<int>(messageId) : -1;
 }
 
-QByteArray CQDltFileMessageStoreAdapter::rawMessageBytes(MessageId messageId) const
+std::vector<char> CQDltFileMessageStoreAdapter::rawMessage(MessageId messageId) const
 {
     if (!contains(messageId))
-        return QByteArray();
+        return {};
 
-    return m_file->messageBytesAt(static_cast<int>(messageId));
+    const QByteArray data = m_file->messageBytesAt(static_cast<int>(messageId));
+    return std::vector<char>(data.cbegin(), data.cend());
 }
 
 bool CQDltFileMessageStoreAdapter::message(MessageId messageId, QDltMsg &msg, bool useCache) const
 {
-    const int globalIndex = globalIndexForMessageId(messageId);
-    if (globalIndex < 0)
+    if (!contains(messageId))
         return false;
 
+    const int globalIndex = static_cast<int>(messageId);
     if (!m_file->messageAt(globalIndex, msg, useCache))
         return false;
 
     return true;
-}
-
-bool CQDltFileMessageStoreAdapter::messageWithBytes(MessageId messageId,
-                                                    QDltMsg &msg,
-                                                    QByteArray &bytes,
-                                                    bool useCache) const
-{
-    bytes.clear();
-    const int globalIndex = globalIndexForMessageId(messageId);
-    if (globalIndex < 0)
-        return false;
-
-    if (!useCache)
-    {
-        QByteArray buffer;
-        if (!m_file->getMsgNoCache(globalIndex, msg, buffer))
-            return false;
-        bytes = buffer;
-        return true;
-    }
-
-    if (!m_file->messageAt(globalIndex, msg, true))
-    {
-        return false;
-    }
-    bytes = m_file->messageBytesAt(globalIndex);
-    return !bytes.isEmpty();
 }
 
 std::vector<MessageId> CQDltFileMessageStoreAdapter::snapshotAllMessageIds() const
@@ -140,7 +114,7 @@ std::vector<MessageId> CQDltFileMessageStoreAdapter::snapshotFilteredMessageIds(
         return snapshotAllMessageIds();
 
     std::vector<MessageId> ids;
-    const QVector<qint64> filterRef = m_file->getIndexFilter();
+    const auto &filterRef = m_file->getIndexFilterRef();
     ids.reserve(filterRef.size());
     for (const auto &index : filterRef)
     {

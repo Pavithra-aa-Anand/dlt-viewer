@@ -57,7 +57,7 @@ public:
      * @param singlePassBypass Skip all cache operations for a one-pass workload.
      * @return `true` when the message was loaded and, if requested, decoded.
      */
-    bool message(QDltFile *file,
+    bool message(const QDltFile *file,
                  QDltPluginManager *pluginManager,
                  int globalIndex,
                  bool decodeEnabled,
