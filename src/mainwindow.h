@@ -147,6 +147,8 @@ private:
     CDecodeCacheService m_decodeCacheService;
     WorkingDirectory workingDirectory;
     bool filterIsChanged;
+    bool m_suppressPluginSelectionRefresh = false;
+    bool m_suppressPluginAutoload = false;
 
     /* Status line items */
     QLabel *statusFilename;
@@ -320,7 +322,7 @@ private:
     void loadPlugins();
     void updatePluginsECUList();
     void updatePlugins();
-    void updatePlugin(PluginItem *item);
+    bool updatePlugin(PluginItem *item);
     void versionString(const QDltMsg &msg);
     void pluginsAutoload(QString version);
 
@@ -394,6 +396,7 @@ private:
      *
      */
     void ErrorMessage(QMessageBox::Icon level, QString title,  QString message);
+    void showPluginLoadConfigError(const QString& pluginName, const QString& error, bool silentMode);
 
     void clearSelection();
     void saveSelection();
