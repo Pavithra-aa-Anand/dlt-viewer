@@ -6849,6 +6849,9 @@ void MainWindow::triggerPluginsAutoload()
 
 void MainWindow::pluginsAutoload(QString version)
 {
+    if (version.trimmed().isEmpty())
+        return;
+
     // Iterate through all enabled decoder plugins
     for(int num = 0; num < project.plugin->topLevelItemCount(); num++)
     {
@@ -6935,15 +6938,8 @@ void MainWindow::on_action_menuPlugin_Edit_triggered() {
             if(pluginFilenameChanged)
                 callInitFile = true;
 
-            const bool reloadCurrentLog = callInitFile && !openFileNames.isEmpty();
+            bool reloadCurrentLog = callInitFile && !openFileNames.isEmpty();
             m_suppressPluginSelectionRefresh = reloadCurrentLog;
-
-            if (reloadCurrentLog)
-            {
-                clearSelection();
-                m_tableModel->setForceEmpty(true);
-                m_tableModel->modelChanged();
-            }
 
             const QString previousFilename = item->getFilename();
             const int previousMode = item->getMode();
@@ -6958,11 +6954,16 @@ void MainWindow::on_action_menuPlugin_Edit_triggered() {
                 item->setMode(previousMode);
                 item->setType(previousType);
                 item->update();
+                reloadCurrentLog = false;
+                callInitFile = false;
             }
             item->savePluginModeToSettings();
 
             if (reloadCurrentLog)
             {
+                clearSelection();
+                m_tableModel->setForceEmpty(true);
+                m_tableModel->modelChanged();
                 syncCheckBoxesAndMenu();
                 applyConfigEnabled(false);
                 filterUpdate();
